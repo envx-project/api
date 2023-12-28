@@ -1,0 +1,33 @@
+[package]
+name = "rusty-api"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.7", features = [
+    "runtime-tokio",
+    "tls-native-tls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "macros",
+    "json",
+    "migrate",
+] }
+
+anyhow = "1.0"
+base64 = "0.21.0"
+crypto-hash = "0.3.4"
+dotenv = "0.15.0"
+hex = "0.4.3"
+pgp = "0.10.1"
+rand = "0.8.5"
+rocket = { version = "0.5.0", features = ["json"] }
+rocket_anyhow = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+smallvec = "1.10.0"
+chrono = { version = "0.4", features = ["serde"] }
