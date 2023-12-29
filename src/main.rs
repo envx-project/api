@@ -66,8 +66,10 @@ async fn init_router() -> anyhow::Result<Router> {
         .route("/user/:id", get(user::get_user))
         .route("/user/:id/variables", get(user::get_all_variables))
         // miscelaneous
-        .route("/hello", get(index::hello_world))
+        .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
+        // well-known
+        .route("/.well-known/health-check", get(well_known::health_check))
         .with_state(state);
 
     Ok(router)
