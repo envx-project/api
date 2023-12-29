@@ -1,17 +1,6 @@
-use rocket::serde::{json::Json, Deserialize, Serialize};
-use sqlx::types::Uuid;
+use pgp::{Deserializable, SignedPublicKey};
 
-#[derive(Serialize, Deserialize)]
-pub struct NewUserResponse {
-    id: String,
-    username: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetUserResponse {
-    id: String,
-    public_key: String,
-}
+use crate::{extractors::user::UserId, *};
 
 #[derive(Serialize, Deserialize)]
 pub struct NewUserBody {
@@ -19,40 +8,33 @@ pub struct NewUserBody {
     public_key: String,
 }
 
-#[post("/user/new", format = "application/json", data = "<body>")]
-pub async fn new_user(body: Json<NewUserBody>) -> Json<NewUserResponse> {
-    let db = crate::db::db().await.unwrap();
+#[derive(Serialize, Deserialize)]
+pub struct NewUserReturnType {
+    id: String,
+}
+
+pub async fn new_user(
+    State(state): State<AppState>,
+    Json(body): Json<NewUserBody>,
+) -> Result<Json<NewUserReturnType>, AppError> {
+    // public key validation
+    match SignedPublicKey::from_string(&body.public_key) {
+        Ok(_) => {}
+        Err(_) => {
+            return Err(AppError::Error(Errors::InvalidPublicKey));
+        }
+    }
 
     let user = sqlx::query!(
         "INSERT INTO users (username, public_key) VALUES ($1, $2) RETURNING id",
-        body.username.clone(),
+        body.username,
         body.public_key
     )
-    .fetch_one(&db)
+    .fetch_one(&*state.db)
     .await
-    .unwrap();
+    .context("Failed to insert user")?;
 
-    let string_id = user.id.to_string();
-
-    Json(NewUserResponse {
-        id: string_id,
-        username: body.username.clone(),
-    })
-}
-
-#[get("/user/<id>")]
-pub async fn get_user(id: String) -> Json<GetUserResponse> {
-    let db = crate::db::db().await.unwrap();
-
-    let uuid_id = Uuid::parse_str(&id).unwrap();
-
-    let user = sqlx::query!("SELECT id, public_key FROM users WHERE id = $1", uuid_id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
-
-    Json(GetUserResponse {
+    Ok(Json(NewUserReturnType {
         id: user.id.to_string(),
-        public_key: user.public_key,
-    })
+    }))
 }

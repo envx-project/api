@@ -1,35 +1,59 @@
+use std::sync::Arc;
+
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use dotenv::dotenv;
-use rocket::fs::FileServer;
 
-#[macro_use]
-extern crate rocket;
-
-mod guards;
-mod helpers;
-mod utils;
-
-mod db;
-mod macros;
+//#region mod
 mod routes;
-mod structs;
-
 use routes::*;
 
-#[launch]
-fn rocket() -> _ {
+mod db;
+mod error;
+mod extractors;
+mod helpers;
+mod state;
+mod structs;
+mod traits;
+mod utils;
+//#endregion
+
+//#region global use
+pub(crate) use anyhow::Context;
+pub(crate) use axum::extract::{Json, State};
+pub(crate) use error::{AnyhowError, AppError, Errors};
+pub(crate) use serde::{Deserialize, Serialize};
+pub(crate) use state::AppState;
+//#endregion
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
-    let rocket = mount_routes!(
-        rocket::build(),
-        index::index,
-        user::new_user,
-        test::test,
-        variables::new_variable,
-        projects::new_project,
-        projects::get_variables,
-        projects::add_user_to_project
-    )
-    .mount("/", FileServer::from("static/"));
+    let app = init_router().await?;
 
-    rocket
+    let listener = tokio::net::TcpListener::bind("localhost:3000").await?;
+    println!("listening on http://{}", listener.local_addr()?);
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+async fn init_router() -> anyhow::Result<Router> {
+    let db = db::db().await?;
+
+    let state = AppState { db: Arc::new(db) };
+
+    let router: Router = Router::new()
+        .route("/variable/new", post(variables::new_variable))
+        .route("/variable/:id", get(variables::get_variable))
+        .route("/project/:id", get(projects::get_project_info))
+        .route("/user/new", post(user::new_user))
+        .route("/hello", get(index::hello_world))
+        .route("/test-auth", post(test_auth::test_auth))
+        .with_state(state);
+
+    Ok(router)
 }

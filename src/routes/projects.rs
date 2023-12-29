@@ -1,112 +1,49 @@
-use crate::db;
-use crate::structs::Variable;
-use crate::*;
-use anyhow::Ok;
-use rocket::serde::{json::Json, Deserialize, Serialize};
-use sqlx::types::Uuid;
+use crate::structs::User;
+use crate::{extractors::user::UserId, helpers::project::user_in_project};
+use crate::{utils::uuid::UuidHelpers, *};
+use axum::extract::Path;
+use uuid::Uuid as UuidValidator;
 
 #[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
-pub struct Body {
-    user_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct NewProjectReturnType {
+pub struct ProjectInfo {
     project_id: String,
+    users: Vec<User>,
 }
 
-#[post("/project/new", format = "application/json", data = "<body>")]
-pub async fn new_project(body: Json<Body>) -> Json<NewProjectReturnType> {
-    async fn insert_project(
-        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        user_id: String,
-    ) -> anyhow::Result<String> {
-        let project = sqlx::query!("INSERT INTO projects DEFAULT VALUES RETURNING id")
-            .fetch_one(&mut **transaction)
-            .await?;
+pub async fn get_project_info(
+    user_id: UserId,
+    State(state): State<AppState>,
+    Path(id): Path<UuidValidator>,
+) -> Result<Json<ProjectInfo>, AppError> {
+    let project_id = id.to_sqlx();
 
-        sqlx::query!(
-            "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
-            Uuid::parse_str(&user_id).unwrap(),
-            project.id
-        )
-        .execute(&mut **transaction)
-        .await?;
-
-        Ok(project.id.to_string())
+    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    let db = db::db().await.unwrap();
-
-    let mut transaction = db.begin().await.unwrap();
-
-    let project_id = insert_project(&mut transaction, body.user_id.clone())
-        .await
-        .unwrap();
-
-    transaction.commit().await.unwrap();
-
-    Json(NewProjectReturnType { project_id })
-}
-
-#[derive(Serialize, Deserialize)]
-struct AddUserBody {
-    user_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct AddUserReturnType {
-    project_id: String,
-}
-
-#[post(
-    "/project/<project_id>/add_user",
-    format = "application/json",
-    data = "<body>"
-)]
-pub async fn add_user_to_project(
-    project_id: String,
-    body: Json<AddUserBody>,
-) -> Json<AddUserReturnType> {
-    let db = db::db().await.unwrap();
-
-    sqlx::query!(
-        "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
-        Uuid::parse_str(&body.user_id).unwrap(),
-        Uuid::parse_str(&project_id).unwrap()
+    let users = sqlx::query!(
+        "SELECT u.id, u.username, u.created_at, u.public_key
+        FROM users u
+        JOIN user_project_relations upr ON u.id = upr.user_id
+        WHERE upr.project_id = $1",
+        project_id
     )
-    .execute(&db)
+    .fetch_all(&*state.db)
     .await
-    .unwrap();
+    .context("Failed to get users")?;
 
-    Json(AddUserReturnType {
-        project_id: project_id.clone(),
-    })
-}
+    let users: Vec<User> = users
+        .iter()
+        .map(|user| User {
+            id: user.id.to_string(),
+            username: user.username.clone(),
+            created_at: user.created_at.to_string(),
+            public_key: user.public_key.clone(),
+        })
+        .collect();
 
-#[get("/project/<project_id>/variables")]
-pub async fn get_variables(project_id: String) -> Json<Vec<Variable>> {
-    let db = db::db().await.unwrap();
-
-    let variables = sqlx::query!(
-        "SELECT id, value, encrypted FROM variables WHERE project_id = $1",
-        Uuid::parse_str(&project_id).unwrap()
-    )
-    .fetch_all(&db)
-    .await
-    .unwrap();
-
-    let mut encrypted_variables: Vec<Variable> = Vec::new();
-
-    for variable in variables {
-        encrypted_variables.push(Variable {
-            id: variable.id.to_string(),
-            value: variable.value,
-            encrypted: variable.encrypted.unwrap_or(false),
-            project_id: project_id.clone(),
-        });
-    }
-
-    Json(encrypted_variables)
+    Ok(Json(ProjectInfo {
+        project_id: id.to_string(),
+        users,
+    }))
 }

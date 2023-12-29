@@ -1,11 +1,10 @@
-use rocket::serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Variable {
     pub id: String,
     pub value: String,
     pub project_id: String,
-    pub encrypted: bool,
 }
 
 #[derive(Serialize, Deserialize)]

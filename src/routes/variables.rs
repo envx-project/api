@@ -1,58 +1,100 @@
-use crate::db;
-use crate::*;
-use rocket::serde::{json::Json, Deserialize, Serialize};
-use sqlx::types::Uuid;
+use crate::{extractors::user::UserId, helpers::project::user_in_project, traits::to_uuid::ToUuid};
+use axum::extract::Path;
+use uuid::Uuid as UuidValidator;
+
+use crate::{utils::uuid::UuidHelpers, *};
 
 #[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
 pub struct Body {
     project_id: String,
     value: String,
-    encrypted: bool,
 }
 
-#[post("/variable/new", format = "application/json", data = "<body>")]
-pub async fn new_variable(
-    body: Json<Body>,
-) -> Result<String, rocket::response::status::BadRequest<String>> {
-    let db = db::db().await.unwrap();
+#[derive(Serialize, Deserialize)]
+pub struct NewVariableReturnType {
+    id: String,
+}
 
-    // check to make sure value isn't >1M
-    if body.value.len() > 1_000_000 {
-        return Err(rocket::response::status::BadRequest(
-            "value cannot be greater than 1M".to_string(),
-        ));
+pub async fn new_variable(
+    State(state): State<AppState>,
+    user_id: UserId,
+    Json(body): Json<Body>,
+) -> Result<Json<NewVariableReturnType>, AppError> {
+    let project_id = body.project_id.to_uuid()?;
+
+    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    let test = sqlx::query!(
-        "INSERT INTO variables (value, encrypted) VALUES ($1, $2) RETURNING id",
+    let variable = sqlx::query!(
+        "INSERT INTO variables (value, project_id) VALUES ($1, $2) RETURNING id",
         body.value,
-        body.encrypted
+        project_id
     )
-    .fetch_one(&db)
+    .fetch_one(&*state.db)
     .await
-    .unwrap();
+    .context("Failed to insert variable")?;
 
-    Ok(String::from(format!("test: {}", test.id)))
+    Ok(Json(NewVariableReturnType {
+        id: variable.id.to_string(),
+    }))
 }
 
-#[get("/variable/<id>")]
+pub async fn set_many_variables(
+    State(state): State<AppState>,
+    user_id: UserId,
+    Json(body): Json<Vec<Body>>,
+) -> Result<Json<NewVariableReturnType>, AppError> {
+    let project_id = body[0].project_id.to_uuid()?;
+
+    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    let mut query = String::from("INSERT INTO variables (value, project_id) VALUES ");
+
+    let mut values = Vec::new();
+
+    for (i, variable) in body.iter().enumerate() {
+        query.push_str(&format!("(${}, ${})", i * 2 + 1, i * 2 + 2));
+
+        if i != body.len() - 1 {
+            query.push_str(", ");
+        }
+
+        values.push(variable.value.clone());
+        values.push(project_id);
+    }
+
+    query.push_str(" RETURNING id");
+
+    let variable = sqlx::query(&query)
+        .bind_all(values)
+        .fetch_one(&*state.db)
+        .await
+        .context("Failed to insert variable")?;
+
+    Ok(Json(NewVariableReturnType {
+        id: variable.id.to_string(),
+    }))
+}
+
 pub async fn get_variable(
-    id: String,
-) -> Result<String, rocket::response::status::NotFound<String>> {
-    let db = db::db().await.unwrap();
-
-    let uuid_id = Uuid::parse_str(&id).unwrap();
-
+    State(state): State<AppState>,
+    Path(id): Path<UuidValidator>,
+    user_id: UserId,
+) -> Result<String, AppError> {
     let variable = sqlx::query!(
         "SELECT id, value, project_id FROM variables WHERE id = $1",
-        uuid_id
+        &id.to_sqlx()
     )
-    .fetch_one(&db)
+    .fetch_one(&*state.db)
     .await
-    .unwrap();
+    .context("Failed to get variable")?;
 
-    if variable.project_id.is_some() {}
+    if !user_in_project(user_id.to_uuid(), variable.project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
 
     Ok(String::from(format!("variable: {}", variable.id)))
 }

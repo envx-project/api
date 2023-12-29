@@ -7,11 +7,10 @@ use pgp::{composed, composed::signed_key::*, crypto, types::SecretKeyTrait, Dese
 use rand::prelude::*;
 use smallvec::*;
 
-pub fn verify_signature(message: String, public_key: String) -> Result<bool> {
-    let msg = Message::from_string(&message).context("invalid message")?.0;
+pub fn verify_signature(message: Message, public_key: String) -> Result<bool> {
     let public_key = SignedPublicKey::from_string(&public_key)
         .context("invalid public key")?
         .0;
-    let verified = msg.verify(&public_key);
+    let verified = message.verify(&public_key);
     Ok(verified.is_ok())
 }

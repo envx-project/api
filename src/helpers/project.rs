@@ -1,4 +1,4 @@
-use crate::db;
+use crate::{db, state::DB};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Uuid;
 
@@ -25,18 +25,13 @@ pub async fn get_project_info(project_id: String) -> anyhow::Result<GetProjectIn
     })
 }
 
-pub async fn user_in_project(user_id: String, project_id: String) -> anyhow::Result<bool> {
-    let db = db::db().await?;
-
-    let uuid_user_id = Uuid::parse_str(&user_id)?;
-    let uuid_project_id = Uuid::parse_str(&project_id)?;
-
+pub async fn user_in_project(user_id: Uuid, project_id: Uuid, db: &DB) -> anyhow::Result<bool> {
     let user = sqlx::query!(
         "SELECT user_id FROM user_project_relations WHERE user_id = $1 AND project_id = $2",
-        uuid_user_id,
-        uuid_project_id
+        user_id,
+        project_id
     )
-    .fetch_optional(&db)
+    .fetch_optional(db.as_ref())
     .await?;
 
     Ok(user.is_some())
