@@ -54,6 +54,7 @@ async fn init_router() -> anyhow::Result<Router> {
             post(variables::update_many_variables),
         )
         // projects
+        .route("/projects/new", post(projects::new_project))
         .route("/projects", get(projects::list_projects))
         .route("/project/:id", get(projects::get_project_info))
         .route(

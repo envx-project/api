@@ -131,3 +131,26 @@ pub async fn list_projects(
 
     Ok(Json(projects))
 }
+
+pub async fn new_project(
+    State(state): State<AppState>,
+    user_id: UserId,
+) -> Result<String, AppError> {
+    let project = sqlx::query!("INSERT INTO projects DEFAULT VALUES RETURNING id",)
+        .fetch_one(&*state.db)
+        .await
+        .context("Failed to create project")?;
+
+    let project_id = project.id;
+
+    sqlx::query!(
+        "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
+        user_id.to_uuid(),
+        project_id
+    )
+    .execute(&*state.db)
+    .await
+    .context("Failed to add user to project")?;
+
+    Ok(project_id.to_string())
+}
