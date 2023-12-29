@@ -11,5 +11,5 @@ pub async fn test_auth(State(state): State<AppState>, user_id: UserId) -> Result
         .await
         .context("Failed to get user")?;
 
-    Ok(String::from(format!("user: {:?}", user)))
+    Ok(format!("user: {:?}", user))
 }

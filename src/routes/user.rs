@@ -1,6 +1,5 @@
+use crate::*;
 use pgp::{Deserializable, SignedPublicKey};
-
-use crate::{extractors::user::UserId, *};
 
 #[derive(Serialize, Deserialize)]
 pub struct NewUserBody {

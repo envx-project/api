@@ -47,10 +47,19 @@ async fn init_router() -> anyhow::Result<Router> {
     let state = AppState { db: Arc::new(db) };
 
     let router: Router = Router::new()
+        // variables
         .route("/variable/new", post(variables::new_variable))
         .route("/variable/:id", get(variables::get_variable))
+        .route("/variables/set-many", post(variables::set_many_variables))
+        // projects
         .route("/project/:id", get(projects::get_project_info))
+        .route(
+            "/project/:id/variables",
+            get(projects::get_project_variables),
+        )
+        // users
         .route("/user/new", post(user::new_user))
+        // miscelaneous
         .route("/hello", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
         .with_state(state);

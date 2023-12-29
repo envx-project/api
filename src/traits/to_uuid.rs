@@ -5,6 +5,6 @@ pub trait ToUuid {
 
 impl ToUuid for String {
     fn to_uuid(&self) -> anyhow::Result<Uuid> {
-        Ok(Uuid::parse_str(&self)?)
+        Ok(Uuid::parse_str(self)?)
     }
 }

@@ -81,7 +81,7 @@ async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Arc<Strin
         None => bail!("Invalid challenge"),
     };
 
-    let (signed_challenge, _) = Message::from_string(&challenge)?;
+    let (signed_challenge, _) = Message::from_string(challenge)?;
     let Some(content) = signed_challenge.get_content()? else {
         bail!("No content in signed challenge")
     };

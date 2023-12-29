@@ -47,3 +47,30 @@ pub async fn get_project_info(
         users,
     }))
 }
+
+pub async fn get_project_variables(
+    State(state): State<AppState>,
+    user_id: UserId,
+    Path(id): Path<UuidValidator>,
+) -> Result<Json<Vec<String>>, AppError> {
+    let project_id = id.to_sqlx();
+
+    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    let variables = sqlx::query!(
+        "SELECT id, value, project_id FROM variables WHERE project_id = $1",
+        project_id
+    )
+    .fetch_all(&*state.db)
+    .await
+    .context("Failed to get variables")?;
+
+    Ok(Json(
+        variables
+            .iter()
+            .map(|v| v.value.clone())
+            .collect::<Vec<String>>(),
+    ))
+}

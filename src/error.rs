@@ -1,14 +1,14 @@
-use std::str::Utf8Error;
-
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use std::str::Utf8Error;
 
+#[allow(dead_code)]
 pub enum Errors {
     TooBig(usize),
     SqlxError(sqlx::Error),
-    ISE(anyhow::Error),
+    Ise(anyhow::Error),
     Unimplemented,
     Unauthorized,
     InvalidPublicKey,
@@ -45,7 +45,7 @@ impl From<sqlx::Error> for AppError {
 
 impl From<Utf8Error> for AppError {
     fn from(e: Utf8Error) -> Self {
-        AppError::Error(Errors::ISE(anyhow::Error::from(e)))
+        AppError::Error(Errors::Ise(anyhow::Error::from(e)))
     }
 }
 
@@ -65,7 +65,7 @@ impl IntoResponse for AppError {
                     (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into_response()
                 }
 
-                Errors::ISE(e) => {
+                Errors::Ise(e) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
                 }
 
