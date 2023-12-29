@@ -31,8 +31,6 @@ serde_json = "1.0"
 smallvec = "1.10.0"
 chrono = { version = "0.4", features = ["serde"] }
 
-# rocket = { version = "0.5.0", features = ["json"] }
-# rocket_anyhow = "0.1"
 
 axum = { version = "0.7", features = ["macros", "http2"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }

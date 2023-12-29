@@ -1,6 +1,11 @@
-use crate::{extractors::user::UserId, helpers::project::user_in_project, traits::to_uuid::ToUuid};
+use std::collections::HashSet;
+
+use crate::structs::Variable;
+use crate::traits::to_uuid::ToUuid;
+use crate::{extractors::user::UserId, helpers::project::user_in_project};
 use crate::{utils::uuid::UuidHelpers, *};
 use axum::extract::Path;
+use sqlx::types::Uuid;
 use uuid::Uuid as UuidValidator;
 
 #[derive(Serialize, Deserialize)]
@@ -98,4 +103,83 @@ pub async fn get_variable(
     }
 
     Ok(format!("variable: {}", variable.id))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UpdateManyBody {
+    variables: Vec<Variable>,
+}
+
+pub async fn update_many_variables(
+    State(state): State<AppState>,
+    user_id: UserId,
+    Json(body): Json<UpdateManyBody>,
+) -> Result<Json<Vec<String>>, AppError> {
+    let projects = body
+        .variables
+        .iter()
+        .map(|v| v.project_id.as_str())
+        .collect::<HashSet<&str>>()
+        .iter()
+        .map(|s| s.to_string().to_uuid().unwrap())
+        .collect::<Vec<Uuid>>();
+
+    let projects = sqlx::query!(
+        "SELECT id FROM projects WHERE id = ANY($1::uuid[])",
+        &projects
+    )
+    .fetch_all(&*state.db)
+    .await
+    .context("Failed to get projects")?;
+
+    // make sure the user is in all the projects
+    for project in projects {
+        if !user_in_project(user_id.to_uuid(), project.id, &state.db).await? {
+            return Err(AppError::Error(Errors::Unauthorized));
+        }
+    }
+
+    // use UNNEST to update all the variables at once
+    let variables = sqlx::query!(
+        "UPDATE variables AS v SET value = u.value FROM UNNEST($1::uuid[], $2::text[]) AS u(id, value) WHERE v.id = u.id RETURNING v.id",
+        &body.variables.iter().map(|v| v.id.to_uuid().unwrap()).collect::<Vec<Uuid>>(),
+        &body.variables.iter().map(|v| v.value.clone()).collect::<Vec<String>>()
+    )
+    .fetch_all(&*state.db)
+    .await
+    .context("Failed to update variables")?;
+
+    dbg!(&variables);
+
+    Ok(Json(
+        variables
+            .iter()
+            .map(|v| v.id.to_string())
+            .collect::<Vec<String>>(),
+    ))
+}
+
+pub async fn delete_variable(
+    State(state): State<AppState>,
+    Path(id): Path<UuidValidator>,
+    user_id: UserId,
+) -> Result<(), AppError> {
+    let variable = sqlx::query!(
+        "SELECT id, value, project_id FROM variables WHERE id = $1",
+        &id.to_sqlx()
+    )
+    .fetch_one(&*state.db)
+    .await
+    .context("Failed to get variable")?;
+
+    if !user_in_project(user_id.to_uuid(), variable.project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    sqlx::query!("DELETE FROM variables WHERE id = $1", &id.to_sqlx())
+        .execute(&*state.db)
+        .await
+        .context("Failed to delete variable")?;
+
+    Ok(())
 }

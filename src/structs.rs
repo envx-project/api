@@ -14,3 +14,17 @@ pub struct User {
     pub created_at: String, // DateTime
     pub public_key: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct StrippedUser {
+    pub id: String,
+    pub public_key: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PartialKey {
+    pub id: String,
+    pub value: String,
+    pub project_id: String,
+    pub created_at: String,
+}
