@@ -41,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
 async fn init_router() -> anyhow::Result<Router> {
     let db = db::db().await?;
 
+    sqlx::migrate!().run(&db).await?;
+
     let state = AppState { db: Arc::new(db) };
 
     let router: Router = Router::new()
