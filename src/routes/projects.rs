@@ -110,6 +110,41 @@ pub async fn add_user(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct RemoveUserBody {
+    users: Vec<String>,
+}
+
+pub async fn remove_user(
+    State(state): State<AppState>,
+    user_id: UserId,
+    Path(id): Path<UuidValidator>,
+    Json(body): Json<RemoveUserBody>,
+) -> Result<(), AppError> {
+    let project_id = id.to_sqlx();
+
+    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    let users_to_remove = body
+        .users
+        .iter()
+        .map(|user| user.to_uuid().unwrap())
+        .collect::<Vec<UuidValidator>>();
+
+    sqlx::query!(
+        "DELETE FROM user_project_relations WHERE user_id = ANY($1::uuid[]) AND project_id = $2",
+        &users_to_remove,
+        project_id
+    )
+    .execute(&*state.db)
+    .await
+    .context("Failed to remove user from project")?;
+
+    Ok(())
+}
+
 pub async fn list_projects(
     State(state): State<AppState>,
     user_id: UserId,

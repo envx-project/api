@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 async fn init_router() -> anyhow::Result<Router> {
     let db = db::db().await?;
 
-    sqlx::migrate!().run(&db).await?;
+    // sqlx::migrate!().run(&db).await?;
 
     let state = AppState { db: Arc::new(db) };
 
@@ -64,11 +64,12 @@ async fn init_router() -> anyhow::Result<Router> {
             get(projects::get_project_variables),
         )
         .route("/project/:id/add-user", post(projects::add_user))
+        .route("/project/:id/remove-user", post(projects::remove_user))
         // users
         .route("/user/new", post(user::new_user))
         .route("/user/:id", get(user::get_user))
         .route("/user/:id/variables", get(user::get_all_variables))
-        // miscelaneous
+        // miscellaneous
         .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
         // well-known
