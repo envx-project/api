@@ -1,5 +1,7 @@
 FROM rust:1-bookworm as builder
 
+ARG DATABASE_URL
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
