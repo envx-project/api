@@ -52,6 +52,10 @@ async fn init_router() -> anyhow::Result<Router> {
         .route("/variables/:id", delete(variables::delete_variable))
         .route("/variables/set-many", post(variables::set_many_variables))
         .route(
+            "/variables/set-many/v2",
+            post(variables::set_many_variables_v2),
+        )
+        .route(
             "/variables/update-many",
             post(variables::update_many_variables),
         )
