@@ -31,7 +31,8 @@ pub async fn new_variable(
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    let variable = sqlx::query!(
+    let variable = sqlx::query_as!(
+        NewVariableReturnType,
         "INSERT INTO variables (value, project_id, tag) VALUES ($1, $2, $3) RETURNING id",
         body.value,
         project_id,
@@ -41,15 +42,14 @@ pub async fn new_variable(
     .await
     .context("Failed to insert variable")?;
 
-    Ok(Json(NewVariableReturnType {
-        id: variable.id.to_string(),
-    }))
+    Ok(Json(variable))
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SetManyBody {
     project_id: String,
     variables: Vec<String>,
+    tag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,23 +68,30 @@ pub async fn set_many_variables(
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    let variables = sqlx::query!(
-        "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
-        &body.variables,
-        &vec![project_id; body.variables.len()]
-    )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to insert variables")?;
+    let variables = if let Some(tag) = body.tag {
+        sqlx::query_as!(
+            SetManyReturnType,
+            "INSERT INTO variables (value, project_id, tag) SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) RETURNING id",
+            &body.variables,
+            &vec![project_id; body.variables.len()],
+            &vec![tag; body.variables.len()]
+        )
+            .fetch_all(&*state.db)
+            .await
+            .context("Failed to insert variables")?
+    } else {
+        sqlx::query_as!(
+            SetManyReturnType,
+            "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
+            &body.variables,
+            &vec![project_id; body.variables.len()]
+        )
+            .fetch_all(&*state.db)
+            .await
+            .context("Failed to insert variables")?
+    };
 
-    Ok(Json(
-        variables
-            .iter()
-            .map(|v| SetManyReturnType {
-                id: v.id.to_string(),
-            })
-            .collect::<Vec<SetManyReturnType>>(),
-    ))
+    Ok(Json(variables))
 }
 
 pub async fn get_variable(
@@ -123,8 +130,8 @@ pub async fn update_many_variables(
         .map(|v| v.project_id.as_str())
         .collect::<HashSet<&str>>()
         .iter()
-        .map(|s| s.to_string().to_uuid().unwrap())
-        .collect::<Vec<Uuid>>();
+        .map(|s| s.to_string().to_uuid())
+        .collect::<anyhow::Result<Vec<Uuid>>>()?;
 
     let projects = sqlx::query!(
         "SELECT id FROM projects WHERE id = ANY($1::uuid[])",
@@ -189,13 +196,13 @@ pub async fn delete_variable(
 #[derive(Serialize, Deserialize)]
 pub struct V2VariableInput {
     value: String,
-    tag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct V2SetManyBody {
     project_id: String,
     variables: Vec<V2VariableInput>,
+    tag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -214,41 +221,28 @@ pub async fn set_many_variables_v2(
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    let variables = sqlx::query!(
-        "INSERT INTO variables (value, project_id, tag) SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) RETURNING id",
-        &body.variables.iter().map(|v| v.value.clone()).collect::<Vec<String>>(),
-        &vec![project_id; body.variables.len()],
-        // &body.variables.iter().map(|v| v.tag.clone()).collect::<Vec<Option<String>>>()
-        &body.variables.iter().map(|v| v.tag.clone().unwrap_or_default()).collect::<Vec<String>>()
-    )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to insert variables")?;
+    let variables = if let Some(tag) = body.tag {
+        sqlx::query_as!(
+            V2SetManyReturnType,
+            "INSERT INTO variables (value, project_id, tag) VALUES ($1, $2, $3) RETURNING id",
+            body.variables[0].value,
+            project_id,
+            tag
+        )
+        .fetch_all(&*state.db)
+        .await
+        .context("Failed to insert variables")?
+    } else {
+        sqlx::query_as!(
+            V2SetManyReturnType,
+            "INSERT INTO variables (value, project_id) VALUES ($1, $2) RETURNING id",
+            body.variables[0].value,
+            project_id
+        )
+        .fetch_all(&*state.db)
+        .await
+        .context("Failed to insert variables")?
+    };
 
-    Ok(Json(
-        variables
-            .iter()
-            .map(|v| V2SetManyReturnType {
-                id: v.id.to_string(),
-            })
-            .collect::<Vec<V2SetManyReturnType>>(),
-    ))
-
-    // let variables = sqlx::query!(
-    //     "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
-    //     &body.variables,
-    //     &vec![project_id; body.variables.len()]
-    // )
-    // .fetch_all(&*state.db)
-    // .await
-    // .context("Failed to insert variables")?;
-    //
-    // Ok(Json(
-    //     variables
-    //         .iter()
-    //         .map(|v| SetManyReturnType {
-    //             id: v.id.to_string(),
-    //         })
-    //         .collect::<Vec<SetManyReturnType>>(),
-    // ))
+    Ok(Json(variables))
 }

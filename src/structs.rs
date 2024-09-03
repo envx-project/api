@@ -5,6 +5,7 @@ pub struct Variable {
     pub id: String,
     pub value: String,
     pub project_id: String,
+    pub tag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
