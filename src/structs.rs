@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize)]
 pub struct Variable {
@@ -7,7 +8,7 @@ pub struct Variable {
     pub project_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct User {
     pub id: String,
     pub username: String,

@@ -1,11 +1,19 @@
 use super::*;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ListProjectsV2 {
     project_id: String,
     project_name: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    responses(
+        (status = OK, description = "Success", body = Vec<ListProjectsV2>, content_type = "application/json"),
+    ),
+    tag = super::PROJECTS_TAG
+)]
 pub async fn list_projects_v2(
     State(state): State<AppState>,
     user_id: UserId,

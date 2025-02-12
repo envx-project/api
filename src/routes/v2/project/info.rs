@@ -1,12 +1,23 @@
+use utoipa::ToSchema;
+
 use super::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ProjectInfoV2 {
     project_id: String,
     project_name: String,
     users: Vec<User>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    responses(
+        (status = OK, description = "Success", body = ProjectInfoV2, content_type = "application/json"),
+        // (status = UNAUTHORIZED, description = "Unauthorized", body = Errors, content_type = "application/json")
+    ),
+    tag = super::PROJECT_TAG
+)]
 pub async fn get_project_info_v2(
     user_id: UserId,
     State(state): State<AppState>,

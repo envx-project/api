@@ -6,8 +6,10 @@ pub(self) use uuid::Uuid as UuidValidator;
 
 mod info;
 
-pub fn router(state: AppState) -> Router<AppState> {
-    Router::new()
-        .route("/{id}", get(info::get_project_info_v2))
+pub const PROJECT_TAG: &str = "project";
+
+pub fn router(state: AppState) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(info::get_project_info_v2))
         .with_state(state)
 }

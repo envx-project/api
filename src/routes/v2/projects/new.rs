@@ -1,10 +1,19 @@
 use super::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct NewProjectBody {
     name: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/new",
+    request_body = NewProjectBody,
+    responses(
+        (status = OK, description = "Success", body = String, content_type = "text/plain"),
+    ),
+    tag = super::PROJECTS_TAG
+)]
 pub async fn new_project_v2(
     State(state): State<AppState>,
     user_id: UserId,

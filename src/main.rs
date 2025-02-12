@@ -3,8 +3,15 @@ use axum::{
     Router,
 };
 use dotenv::dotenv;
-use routes::*;
+use routes::{
+    v2::{project::PROJECT_TAG, projects::PROJECTS_TAG},
+    *,
+};
 use std::sync::Arc;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
+use utoipa_swagger_ui::SwaggerUi;
 
 //#region mod
 mod db;
@@ -38,6 +45,15 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    tags(
+        (name = PROJECTS_TAG, description = "Project API endpoints (for projects under each user)"),
+        (name = PROJECT_TAG, description = "Project API endpoints (for single project)"),
+    ),
+)]
+struct ApiDoc;
+
 async fn init_router() -> anyhow::Result<Router> {
     println!("before");
 
@@ -49,7 +65,7 @@ async fn init_router() -> anyhow::Result<Router> {
 
     let state = AppState { db: Arc::new(db) };
 
-    let router: Router = Router::new()
+    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         // variables
         .route("/variable/new", post(variables::new_variable))
         .route("/variable/{id}", get(variables::get_variable))
@@ -80,10 +96,12 @@ async fn init_router() -> anyhow::Result<Router> {
         // miscellaneous
         .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
-        // well-known
-        .route("/.well-known/health-check", get(well_known::health_check))
+        .routes(routes!(well_known::health_check))
         .nest("/v2/", routes::v2::router(state.clone()))
-        .with_state(state);
+        .with_state(state)
+        .split_for_parts();
+
+    let router = router.merge(SwaggerUi::new("/docs").url("/docs/openapi.json", api));
 
     Ok(router)
 }
