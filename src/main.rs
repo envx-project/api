@@ -39,6 +39,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn init_router() -> anyhow::Result<Router> {
+    println!("before");
+
+    println!("after");
+
     let db = db::db().await?;
 
     // sqlx::migrate!().run(&db).await?;
@@ -48,8 +52,8 @@ async fn init_router() -> anyhow::Result<Router> {
     let router: Router = Router::new()
         // variables
         .route("/variable/new", post(variables::new_variable))
-        .route("/variable/:id", get(variables::get_variable))
-        .route("/variables/:id", delete(variables::delete_variable))
+        .route("/variable/{id}", get(variables::get_variable))
+        .route("/variables/{id}", delete(variables::delete_variable))
         .route("/variables/set-many", post(variables::set_many_variables))
         .route(
             "/variables/set-many/v2",
@@ -61,26 +65,24 @@ async fn init_router() -> anyhow::Result<Router> {
         )
         // projects
         .route("/projects/new", post(projects::new_project))
-        .route("/v2/projects/new", post(projects::new_project_v2))
         .route("/projects", get(projects::list_projects))
-        .route("/v2/projects", get(projects::list_projects_v2))
-        .route("/project/:id", get(projects::get_project_info))
-        .route("/v2/project/:id", get(projects::get_project_info_v2))
+        .route("/project/{id}", get(projects::get_project_info))
         .route(
-            "/project/:id/variables",
+            "/project/{id}/variables",
             get(projects::get_project_variables),
         )
-        .route("/project/:id/add-user", post(projects::add_user))
-        .route("/project/:id/remove-user", post(projects::remove_user))
+        .route("/project/{id}/add-user", post(projects::add_user))
+        .route("/project/{id}/remove-user", post(projects::remove_user))
         // users
         .route("/user/new", post(user::new_user))
-        .route("/user/:id", get(user::get_user))
-        .route("/user/:id/variables", get(user::get_all_variables))
+        .route("/user/{id}", get(user::get_user))
+        .route("/user/{id}/variables", get(user::get_all_variables))
         // miscellaneous
         .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
         // well-known
         .route("/.well-known/health-check", get(well_known::health_check))
+        .nest("/v2/", routes::v2::router(state.clone()))
         .with_state(state);
 
     Ok(router)
