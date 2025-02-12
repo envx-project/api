@@ -5,7 +5,6 @@ use crate::{utils::uuid::UuidHelpers, *};
 use axum::extract::Path;
 use uuid::Uuid as UuidValidator;
 
-
 #[derive(Serialize, Deserialize)]
 pub struct ProjectInfo {
     project_id: String,
@@ -64,13 +63,10 @@ pub async fn get_project_info_v2(
 ) -> Result<Json<ProjectInfoV2>, AppError> {
     let project_id = id.to_sqlx();
 
-    let project_name = sqlx::query!(
-        "SELECT name FROM projects WHERE id = $1",
-        project_id
-    )
-    .fetch_one(&*state.db)
-    .await
-    .context("Failed to get project name")?;
+    let project_name = sqlx::query!("SELECT name FROM projects WHERE id = $1", project_id)
+        .fetch_one(&*state.db)
+        .await
+        .context("Failed to get project name")?;
 
     if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
@@ -280,16 +276,24 @@ pub async fn new_project(
 pub struct NewProjectBody {
     name: String,
 }
-
 pub async fn new_project_v2(
     State(state): State<AppState>,
     user_id: UserId,
     Json(body): Json<NewProjectBody>,
 ) -> Result<String, AppError> {
-    let project = sqlx::query!("INSERT INTO projects (name) VALUES ($1) RETURNING id", body.name)
-        .fetch_one(&*state.db)
+    let mut tx = state
+        .db
+        .begin()
         .await
-        .context("Failed to create project")?;
+        .context("Failed to begin transaction")?;
+
+    let project = sqlx::query!(
+        "INSERT INTO projects (name) VALUES ($1) RETURNING id",
+        body.name
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .context("Failed to create project")?;
 
     let project_id = project.id;
 
@@ -298,9 +302,11 @@ pub async fn new_project_v2(
         user_id.to_uuid(),
         project_id
     )
-    .execute(&*state.db)
+    .execute(&mut *tx)
     .await
     .context("Failed to add user to project")?;
+
+    tx.commit().await.context("Failed to commit transaction")?;
 
     Ok(project_id.to_string())
 }
