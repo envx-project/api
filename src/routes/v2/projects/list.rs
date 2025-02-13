@@ -8,7 +8,7 @@ pub struct ListProjectsV2 {
 
 #[utoipa::path(
     get,
-    path = "/{id}",
+    path = "/",
     responses(
         (status = OK, description = "Success", body = Vec<ListProjectsV2>, content_type = "application/json"),
     ),

@@ -55,10 +55,6 @@ async fn main() -> anyhow::Result<()> {
 struct ApiDoc;
 
 async fn init_router() -> anyhow::Result<Router> {
-    println!("before");
-
-    println!("after");
-
     let db = db::db().await?;
 
     // sqlx::migrate!().run(&db).await?;
