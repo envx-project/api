@@ -1,5 +1,3 @@
-use utoipa::ToSchema;
-
 use super::*;
 
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
