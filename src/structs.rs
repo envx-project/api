@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct Variable {
     pub id: String,
     pub value: String,
@@ -16,13 +16,13 @@ pub struct User {
     pub public_key: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct StrippedUser {
     pub id: String,
     pub public_key: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct PartialKey {
     pub id: String,
     pub value: String,

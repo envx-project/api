@@ -4,7 +4,7 @@ use axum::{
 };
 use dotenv::dotenv;
 use routes::{
-    v2::{project::PROJECT_TAG, projects::PROJECTS_TAG},
+    v2::{project::PROJECT_TAG, projects::PROJECTS_TAG, user::USER_TAG},
     *,
 };
 use std::sync::Arc;
@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     tags(
         (name = PROJECTS_TAG, description = "Project API endpoints (for projects under each user)"),
         (name = PROJECT_TAG, description = "Project API endpoints (for single project)"),
+        (name = USER_TAG, description = "User API endpoints (for single user)"),
     ),
 )]
 struct ApiDoc;
