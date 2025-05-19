@@ -5,21 +5,18 @@ pub(self) use axum::extract::Path;
 pub(self) use utoipa::ToSchema;
 pub(self) use uuid::Uuid as UuidValidator;
 
-mod add_user;
-mod info;
-mod remove_user;
-mod update;
-mod variables;
+mod delete;
+mod get;
+mod set_many;
+mod update_many;
 
-pub const PROJECT_TAG: &str = "project";
+pub const VARIABLES_TAG: &str = "variables";
 
 pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(info::get_project_info_v2))
-        .routes(routes!(update::update_project_v2))
-        // TODO
-        .routes(routes!(add_user::add_user))
-        .routes(routes!(remove_user::remove_user))
-        .routes(routes!(variables::variables))
+        .routes(routes!(delete::delete))
+        .routes(routes!(get::get))
+        .routes(routes!(set_many::set_many))
+        .routes(routes!(update_many::update_many))
         .with_state(state)
 }

@@ -89,6 +89,7 @@ async fn init_router() -> anyhow::Result<Router> {
         // users
         .route("/user/new", post(user::new_user))
         .route("/user/{id}", get(user::get_user))
+        // lowkey useless
         .route("/user/{id}/variables", get(user::get_all_variables))
         // miscellaneous
         .route("/", get(index::hello_world))

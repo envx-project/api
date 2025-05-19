@@ -6,6 +6,7 @@ pub mod invite;
 pub mod project;
 pub mod projects;
 pub mod user;
+pub mod variables;
 
 pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
