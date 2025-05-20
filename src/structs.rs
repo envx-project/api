@@ -27,5 +27,5 @@ pub struct PartialKey {
     pub id: String,
     pub value: String,
     pub project_id: String,
-    pub created_at: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }

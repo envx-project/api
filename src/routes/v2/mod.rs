@@ -1,4 +1,5 @@
-pub(self) use crate::AppState;
+pub(self) use crate::*;
+pub(self) use utoipa::ToSchema;
 pub(self) use utoipa_axum::router::OpenApiRouter;
 pub(self) use utoipa_axum::routes;
 
@@ -14,5 +15,6 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .nest("/projects", projects::router(state.clone()))
         .nest("/user", user::router(state.clone()))
         .nest("/invite", invite::router(state.clone()))
+        .nest("/variables", variables::router(state.clone()))
         .with_state(state)
 }

@@ -16,7 +16,7 @@ pub struct NewProjectBody {
 )]
 pub async fn new_project_v2(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
     Json(body): Json<NewProjectBody>,
 ) -> Result<String, AppError> {
     let mut tx = state
@@ -37,7 +37,7 @@ pub async fn new_project_v2(
 
     sqlx::query!(
         "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
-        user_id.to_uuid(),
+        user_id,
         project_id
     )
     .execute(&mut *tx)

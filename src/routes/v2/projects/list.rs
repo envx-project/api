@@ -16,13 +16,13 @@ pub struct ListProjectsV2 {
 )]
 pub async fn list_projects_v2(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
 ) -> Result<Json<Vec<ListProjectsV2>>, AppError> {
     let projects = sqlx::query!(
         "SELECT p.id, p.name FROM projects p
         JOIN user_project_relations upr ON p.id = upr.project_id
         WHERE upr.user_id = $1",
-        user_id.to_uuid()
+        user_id
     )
     .fetch_all(&*state.db)
     .await

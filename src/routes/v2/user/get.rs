@@ -4,11 +4,11 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use uuid::Uuid as UuidValidator;
+use uuid::Uuid;
 
 #[utoipa::path(
     get,
-    path = "/{id}",
+    path = "/{user_id}",
     tag = USER_TAG,
     responses(
         (status = 200, description = "User", body = StrippedUser),
@@ -18,12 +18,12 @@ use uuid::Uuid as UuidValidator;
 pub async fn get_user_v2(
     State(state): State<AppState>,
     _: UserId,
-    Path(id): Path<UuidValidator>,
+    Path(user_id): Path<Uuid>,
 ) -> Result<Json<StrippedUser>, AppError> {
     let user = sqlx::query_as!(
         StrippedUser,
         "SELECT id, public_key FROM users WHERE id = $1",
-        id.to_sqlx()
+        user_id
     )
     .fetch_one(&*state.db)
     .await

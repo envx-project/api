@@ -6,11 +6,17 @@ use std::str::Utf8Error;
 
 #[allow(dead_code)]
 pub enum Errors {
+    /// 413
     TooBig(usize),
+    /// 500
     SqlxError(sqlx::Error),
-    Ise(anyhow::Error),
+    /// 500
+    InternalServerError(anyhow::Error),
+    /// 501
     Unimplemented,
+    /// 401
     Unauthorized,
+    /// 400
     InvalidPublicKey,
 }
 
@@ -45,7 +51,7 @@ impl From<sqlx::Error> for AppError {
 
 impl From<Utf8Error> for AppError {
     fn from(e: Utf8Error) -> Self {
-        AppError::Error(Errors::Ise(anyhow::Error::from(e)))
+        AppError::Error(Errors::InternalServerError(anyhow::Error::from(e)))
     }
 }
 
@@ -65,7 +71,7 @@ impl IntoResponse for AppError {
                     (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into_response()
                 }
 
-                Errors::Ise(e) => {
+                Errors::InternalServerError(e) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
                 }
 

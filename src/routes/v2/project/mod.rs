@@ -1,13 +1,12 @@
 pub(self) use crate::structs::User;
+pub(self) use crate::*;
 pub(self) use crate::{extractors::user::UserId, helpers::project::user_in_project};
-pub(self) use crate::{utils::uuid::UuidHelpers, *};
 pub(self) use axum::extract::Path;
 pub(self) use utoipa::ToSchema;
-pub(self) use uuid::Uuid as UuidValidator;
 
 mod add_user;
 mod info;
-mod remove_user;
+mod remove_users;
 mod update;
 mod variables;
 
@@ -19,7 +18,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(update::update_project_v2))
         // TODO
         .routes(routes!(add_user::add_user))
-        .routes(routes!(remove_user::remove_user))
+        .routes(routes!(remove_users::remove_users))
         .routes(routes!(variables::variables))
         .with_state(state)
 }

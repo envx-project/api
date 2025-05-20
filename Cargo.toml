@@ -37,6 +37,6 @@ axum-extra = { version = "0.10", features = ["typed-header"] }
 
 uuid = { version = "1.13", features = ["serde", "v4"] }
 
-utoipa = { version = "5.3.1", features = ["axum_extras"] }
+utoipa = { version = "5.3.1", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = "0.2.0"

@@ -2,7 +2,7 @@ use super::*;
 
 #[utoipa::path(
     get,
-    path = "/{id}",
+    path = "/{variable_id}",
     tag = VARIABLES_TAG,
     responses(
         // (status = 200, description = "Project ID", body = String),

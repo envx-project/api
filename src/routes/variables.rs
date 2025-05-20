@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::structs::Variable;
 use crate::traits::to_uuid::ToUuid;
+use crate::*;
 use crate::{extractors::user::UserId, helpers::project::user_in_project};
-use crate::{utils::uuid::UuidHelpers, *};
 use axum::extract::Path;
 use sqlx::types::Uuid;
 use uuid::Uuid as UuidValidator;
@@ -22,12 +22,12 @@ pub struct NewVariableReturnType {
 
 pub async fn new_variable(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
     Json(body): Json<NewVariableBody>,
 ) -> Result<Json<NewVariableReturnType>, AppError> {
     let project_id = body.project_id.to_uuid()?;
 
-    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -59,12 +59,12 @@ pub struct SetManyReturnType {
 
 pub async fn set_many_variables(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
     Json(body): Json<SetManyBody>,
 ) -> Result<Json<Vec<SetManyReturnType>>, AppError> {
     let project_id = body.project_id.to_uuid()?;
 
-    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -87,20 +87,21 @@ pub async fn set_many_variables(
     ))
 }
 
+// literally what is the point of this method
 pub async fn get_variable(
     State(state): State<AppState>,
-    Path(id): Path<UuidValidator>,
-    user_id: UserId,
+    Path(variable_id): Path<Uuid>,
+    UserId(user_id): UserId,
 ) -> Result<String, AppError> {
     let variable = sqlx::query!(
         "SELECT id, value, project_id FROM variables WHERE id = $1",
-        &id.to_sqlx()
+        variable_id
     )
     .fetch_one(&*state.db)
     .await
     .context("Failed to get variable")?;
 
-    if !user_in_project(user_id.to_uuid(), variable.project_id, &state.db).await? {
+    if !user_in_project(user_id, variable.project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -114,7 +115,7 @@ pub struct UpdateManyBody {
 
 pub async fn update_many_variables(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
     Json(body): Json<UpdateManyBody>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let projects = body
@@ -136,7 +137,7 @@ pub async fn update_many_variables(
 
     // make sure the user is in all the projects
     for project in projects {
-        if !user_in_project(user_id.to_uuid(), project.id, &state.db).await? {
+        if !user_in_project(user_id, project.id, &state.db).await? {
             return Err(AppError::Error(Errors::Unauthorized));
         }
     }
@@ -163,22 +164,22 @@ pub async fn update_many_variables(
 
 pub async fn delete_variable(
     State(state): State<AppState>,
-    Path(id): Path<UuidValidator>,
-    user_id: UserId,
+    Path(variable_id): Path<Uuid>,
+    UserId(user_id): UserId,
 ) -> Result<(), AppError> {
     let variable = sqlx::query!(
         "SELECT id, value, project_id FROM variables WHERE id = $1",
-        &id.to_sqlx()
+        variable_id
     )
     .fetch_one(&*state.db)
     .await
     .context("Failed to get variable")?;
 
-    if !user_in_project(user_id.to_uuid(), variable.project_id, &state.db).await? {
+    if !user_in_project(user_id, variable.project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    sqlx::query!("DELETE FROM variables WHERE id = $1", &id.to_sqlx())
+    sqlx::query!("DELETE FROM variables WHERE id = $1", variable_id)
         .execute(&*state.db)
         .await
         .context("Failed to delete variable")?;
@@ -205,12 +206,12 @@ pub struct V2SetManyReturnType {
 
 pub async fn set_many_variables_v2(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
     Json(body): Json<V2SetManyBody>,
 ) -> Result<Json<Vec<V2SetManyReturnType>>, AppError> {
     let project_id = body.project_id.to_uuid()?;
 
-    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 

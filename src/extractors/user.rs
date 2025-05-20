@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     error::{AppError, Errors},
     state::{AppState, DB},
@@ -17,7 +15,7 @@ use sqlx::types::Uuid;
 
 use serde::Deserialize;
 
-pub struct UserId(String);
+pub struct UserId(pub Uuid);
 
 #[derive(Deserialize, Debug)]
 struct Token {
@@ -68,16 +66,16 @@ where
                     }
                 };
 
-                Ok(UserId(user_id.to_string()))
+                Ok(UserId(user_id))
             }
             None => Err(AppError::Error(Errors::Unauthorized)),
         }
     }
 }
 
-async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Arc<String>> {
+async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Uuid> {
     let (user_id, challenge) = match challenge.split_once(':') {
-        Some((user_id, challenge)) => (user_id, challenge),
+        Some((user_id, challenge)) => (Uuid::parse_str(user_id)?, challenge),
         None => bail!("Invalid challenge"),
     };
 
@@ -90,20 +88,18 @@ async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Arc<Strin
     let challenge: DateTime<Utc> = challenge.parse()?;
 
     // check to make sure its not more than 10 minutes old
-    let now = Utc::now();
-    let diff = now.signed_duration_since(challenge);
-
+    let diff = Utc::now().signed_duration_since(challenge);
     if diff.num_minutes() > 10 {
         bail!("Challenge is too old")
     }
+    if diff.num_seconds() < 0 {
+        bail!("Challenge is from the future")
+    }
 
-    let user_pubkey = sqlx::query!(
-        "SELECT public_key FROM users WHERE id = $1",
-        Uuid::parse_str(user_id)?
-    )
-    .fetch_one(&*db)
-    .await?
-    .public_key;
+    let user_pubkey = sqlx::query!("SELECT public_key FROM users WHERE id = $1", user_id)
+        .fetch_one(&*db)
+        .await?
+        .public_key;
 
     let verified = verify_signature(signed_challenge, user_pubkey)?;
 
@@ -111,19 +107,13 @@ async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Arc<Strin
         bail!("Invalid signature")
     }
 
-    Ok(Arc::new(user_id.to_string()))
+    Ok(user_id)
 }
 
 impl std::fmt::Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)?;
+        f.write_str(&self.0.to_string())?;
 
         Ok(())
-    }
-}
-
-impl UserId {
-    pub fn to_uuid(&self) -> Uuid {
-        Uuid::parse_str(&self.0).unwrap()
     }
 }

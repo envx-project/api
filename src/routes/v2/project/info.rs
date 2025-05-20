@@ -9,7 +9,7 @@ pub struct ProjectInfoV2 {
 
 #[utoipa::path(
     get,
-    path = "/{id}",
+    path = "/{project_id}",
     responses(
         (status = OK, description = "Success", body = ProjectInfoV2, content_type = "application/json"),
         // (status = UNAUTHORIZED, description = "Unauthorized", body = Errors, content_type = "application/json")
@@ -17,20 +17,18 @@ pub struct ProjectInfoV2 {
     tag = super::PROJECT_TAG
 )]
 pub async fn get_project_info_v2(
-    user_id: UserId,
+    UserId(user_id): UserId,
     State(state): State<AppState>,
-    Path(id): Path<UuidValidator>,
+    Path(project_id): Path<sqlx::types::Uuid>,
 ) -> Result<Json<ProjectInfoV2>, AppError> {
-    let project_id = id.to_sqlx();
+    if !user_in_project(user_id, project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
 
     let project_name = sqlx::query!("SELECT name FROM projects WHERE id = $1", project_id)
         .fetch_one(&*state.db)
         .await
         .context("Failed to get project name")?;
-
-    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
 
     let users = sqlx::query!(
         "SELECT u.id, u.username, u.created_at, u.public_key
@@ -54,7 +52,7 @@ pub async fn get_project_info_v2(
         .collect();
 
     Ok(Json(ProjectInfoV2 {
-        project_id: id.to_string(),
+        project_id: project_id.to_string(),
         project_name: project_name.name,
         users,
     }))

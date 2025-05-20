@@ -65,8 +65,11 @@ async fn init_router() -> anyhow::Result<Router> {
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         // variables
         .route("/variable/new", post(variables::new_variable))
-        .route("/variable/{id}", get(variables::get_variable))
-        .route("/variables/{id}", delete(variables::delete_variable))
+        .route("/variable/{variable_id}", get(variables::get_variable))
+        .route(
+            "/variables/{variable_id}",
+            delete(variables::delete_variable),
+        )
         .route("/variables/set-many", post(variables::set_many_variables))
         .route(
             "/variables/set-many/v2",
@@ -79,18 +82,21 @@ async fn init_router() -> anyhow::Result<Router> {
         // projects
         .route("/projects/new", post(projects::new_project))
         .route("/projects", get(projects::list_projects))
-        .route("/project/{id}", get(projects::get_project_info))
+        .route("/project/{project_id}", get(projects::get_project_info))
         .route(
-            "/project/{id}/variables",
+            "/project/{project_id}/variables",
             get(projects::get_project_variables),
         )
-        .route("/project/{id}/add-user", post(projects::add_user))
-        .route("/project/{id}/remove-user", post(projects::remove_user))
+        .route("/project/{project_id}/add-user", post(projects::add_user))
+        .route(
+            "/project/{project_id}/remove-user",
+            post(projects::remove_user),
+        )
         // users
         .route("/user/new", post(user::new_user))
-        .route("/user/{id}", get(user::get_user))
+        .route("/user/{user_id}", get(user::get_user))
         // lowkey useless
-        .route("/user/{id}/variables", get(user::get_all_variables))
+        .route("/user/{user_id}/variables", get(user::get_all_variables))
         // miscellaneous
         .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))

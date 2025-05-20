@@ -1,33 +1,27 @@
 use super::*;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct UpdateProjectV2 {
     project_name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
-pub struct UpdateProjectV2Response {
-    id: String,
-}
-
 #[utoipa::path(
     put,
-    path = "/{id}",
+    path = "/{project_id}",
     responses(
-        (status = OK, description = "Success", body = UpdateProjectV2Response, content_type = "application/json"),
+        (status = OK, description = "Success"),
         // (status = UNAUTHORIZED, description = "Unauthorized", body = Errors, content_type = "application/json")
     ),
     tag = super::PROJECT_TAG
 )]
 pub async fn update_project_v2(
-    user_id: UserId,
+    UserId(user_id): UserId,
     State(state): State<AppState>,
-    Path(id): Path<UuidValidator>,
+    Path(project_id): Path<Uuid>,
     Json(update_project): Json<UpdateProjectV2>,
-) -> Result<Json<UpdateProjectV2Response>, AppError> {
-    let project_id = id.to_sqlx();
-
-    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
+) -> Result<(), AppError> {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -40,5 +34,5 @@ pub async fn update_project_v2(
     .await
     .context("Failed to update project")?;
 
-    Ok(Json(UpdateProjectV2Response { id: id.to_string() }))
+    Ok(())
 }

@@ -1,24 +1,22 @@
 use crate::structs::{PartialKey, User};
 use crate::traits::to_uuid::ToUuid;
+use crate::*;
 use crate::{extractors::user::UserId, helpers::project::user_in_project};
-use crate::{utils::uuid::UuidHelpers, *};
 use axum::extract::Path;
 use uuid::Uuid as UuidValidator;
 
 #[derive(Serialize, Deserialize)]
 pub struct ProjectInfo {
-    project_id: String,
+    project_id: uuid::Uuid,
     users: Vec<User>,
 }
 
 pub async fn get_project_info(
-    user_id: UserId,
+    UserId(user_id): UserId,
     State(state): State<AppState>,
-    Path(id): Path<UuidValidator>,
+    Path(project_id): Path<uuid::Uuid>,
 ) -> Result<Json<ProjectInfo>, AppError> {
-    let project_id = id.to_sqlx();
-
-    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -43,10 +41,7 @@ pub async fn get_project_info(
         })
         .collect();
 
-    Ok(Json(ProjectInfo {
-        project_id: id.to_string(),
-        users,
-    }))
+    Ok(Json(ProjectInfo { project_id, users }))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -58,12 +53,10 @@ pub struct ProjectInfoV2 {
 
 pub async fn get_project_variables(
     State(state): State<AppState>,
-    user_id: UserId,
-    Path(id): Path<UuidValidator>,
+    UserId(user_id): UserId,
+    Path(project_id): Path<uuid::Uuid>,
 ) -> Result<Json<Vec<PartialKey>>, AppError> {
-    let project_id = id.to_sqlx();
-
-    if !user_in_project(user_id.to_uuid(), id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -81,7 +74,7 @@ pub async fn get_project_variables(
             id: variable.id.to_string(),
             value: variable.value.clone(),
             project_id: variable.project_id.to_string(),
-            created_at: variable.created_at.to_string(),
+            created_at: variable.created_at,
         })
         .collect::<Vec<PartialKey>>();
 
@@ -94,12 +87,11 @@ pub struct AddUserBody {
 }
 pub async fn add_user(
     State(state): State<AppState>,
-    user_id: UserId,
-    Path(id): Path<UuidValidator>,
+    UserId(user_id): UserId,
+    Path(project_id): Path<uuid::Uuid>,
     Json(body): Json<AddUserBody>,
 ) -> Result<(), AppError> {
-    let project_id = id.to_sqlx();
-    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -124,13 +116,11 @@ pub struct RemoveUserBody {
 
 pub async fn remove_user(
     State(state): State<AppState>,
-    user_id: UserId,
-    Path(id): Path<UuidValidator>,
+    UserId(user_id): UserId,
+    Path(project_id): Path<uuid::Uuid>,
     Json(body): Json<RemoveUserBody>,
 ) -> Result<(), AppError> {
-    let project_id = id.to_sqlx();
-
-    if !user_in_project(user_id.to_uuid(), project_id, &state.db).await? {
+    if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
@@ -154,13 +144,13 @@ pub async fn remove_user(
 
 pub async fn list_projects(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
 ) -> Result<Json<Vec<String>>, AppError> {
     let projects = sqlx::query!(
         "SELECT p.id FROM projects p
         JOIN user_project_relations upr ON p.id = upr.project_id
         WHERE upr.user_id = $1",
-        user_id.to_uuid()
+        user_id
     )
     .fetch_all(&*state.db)
     .await
@@ -176,7 +166,7 @@ pub async fn list_projects(
 
 pub async fn new_project(
     State(state): State<AppState>,
-    user_id: UserId,
+    UserId(user_id): UserId,
 ) -> Result<String, AppError> {
     let project = sqlx::query!("INSERT INTO projects DEFAULT VALUES RETURNING id",)
         .fetch_one(&*state.db)
@@ -187,7 +177,7 @@ pub async fn new_project(
 
     sqlx::query!(
         "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
-        user_id.to_uuid(),
+        user_id,
         project_id
     )
     .execute(&*state.db)
