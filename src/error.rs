@@ -14,15 +14,18 @@ pub enum Errors {
     InternalServerError(anyhow::Error),
     /// 501
     Unimplemented,
-    /// 401
-    Unauthorized,
     /// 400
     InvalidPublicKey,
+    /// 401
+    Unauthorized,
+    /// 404
+    NotFound,
 }
 
 pub enum AppError {
     AnyhowError(AnyhowError),
     Error(Errors),
+    Generic(StatusCode, String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -66,25 +69,22 @@ impl IntoResponse for AppError {
                     format!("Value cannot be greater than {} bytes", size_limit),
                 )
                     .into_response(),
-
                 Errors::SqlxError(_) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong").into_response()
                 }
-
                 Errors::InternalServerError(e) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
                 }
-
                 Errors::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
-
                 Errors::Unimplemented => {
                     (StatusCode::NOT_IMPLEMENTED, "Not implemented").into_response()
                 }
-
                 Errors::InvalidPublicKey => {
                     (StatusCode::BAD_REQUEST, "Invalid public key").into_response()
                 }
+                Errors::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
             },
+            AppError::Generic(status_code, string) => (status_code, string).into_response(),
         }
     }
 }

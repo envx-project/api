@@ -1,9 +1,8 @@
-pub(self) use crate::structs::User;
 pub(self) use crate::*;
 pub(self) use crate::{extractors::user::UserId, helpers::project::user_in_project};
 pub(self) use axum::extract::Path;
 pub(self) use utoipa::ToSchema;
-pub(self) use uuid::Uuid as UuidValidator;
+pub(self) use uuid::Uuid;
 
 mod delete;
 mod get;
