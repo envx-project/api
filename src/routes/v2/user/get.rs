@@ -4,7 +4,6 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use uuid::Uuid;
 
 #[utoipa::path(
     get,

@@ -1,6 +1,6 @@
 use super::*;
 use serde::{Deserialize, Serialize};
-use utoipa::{IntoResponses, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, ToSchema)]

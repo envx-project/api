@@ -15,7 +15,7 @@ pub const PROJECT_TAG: &str = "project";
 pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(info::get_project_info_v2))
-        .routes(routes!(update::update_project_v2))
+        .routes(routes!(update::update))
         // TODO
         .routes(routes!(add_user::add_user))
         .routes(routes!(remove_users::remove_users))

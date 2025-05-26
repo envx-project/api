@@ -105,6 +105,8 @@ async fn init_router() -> anyhow::Result<Router> {
         .with_state(state)
         .split_for_parts();
 
+    std::fs::write("./openapi.json", api.to_json()?)?;
+
     let router = router.merge(SwaggerUi::new("/docs").url("/docs/openapi.json", api));
 
     Ok(router)

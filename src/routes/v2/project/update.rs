@@ -15,7 +15,7 @@ pub struct UpdateProjectV2 {
     ),
     tag = super::PROJECT_TAG
 )]
-pub async fn update_project_v2(
+pub async fn update(
     UserId(user_id): UserId,
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
