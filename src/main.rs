@@ -1,5 +1,5 @@
 use axum::{
-    routing::{delete, get, post},
+    routing::{any, delete, get, post},
     Router,
 };
 use dotenv::dotenv;
@@ -7,7 +7,8 @@ use routes::{
     v2::{project::PROJECT_TAG, projects::PROJECTS_TAG, user::USER_TAG},
     *,
 };
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
+use tower_http::cors::{Any, CorsLayer};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -40,7 +41,11 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     println!("listening on http://localhost:{}", port);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -59,6 +64,11 @@ async fn init_router() -> anyhow::Result<Router> {
     let db = db::db().await?;
 
     // sqlx::migrate!().run(&db).await?;
+    //
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_headers(Any)
+        .allow_methods(Any);
 
     let state = AppState { db: Arc::new(db) };
 
@@ -101,8 +111,10 @@ async fn init_router() -> anyhow::Result<Router> {
         .route("/", get(index::hello_world))
         .route("/test-auth", post(test_auth::test_auth))
         .routes(routes!(well_known::health_check))
+        .route("/ws", any(ws_handler::ws_handler))
         .nest("/v2/", routes::v2::router(state.clone()))
         .with_state(state)
+        .layer(cors)
         .split_for_parts();
 
     std::fs::write("./openapi.json", api.to_json()?)?;
