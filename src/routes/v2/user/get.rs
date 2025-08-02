@@ -16,7 +16,7 @@ use axum::{
 )]
 pub async fn get_user_v2(
     State(state): State<AppState>,
-    _: UserId,
+    _: UserId, // check if the user is authenticated
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<StrippedUser>, AppError> {
     let user = sqlx::query_as!(
