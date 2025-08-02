@@ -14,6 +14,9 @@ pub struct ProjectInfoV2 {
         (status = OK, description = "Success", body = ProjectInfoV2, content_type = "application/json"),
         // (status = UNAUTHORIZED, description = "Unauthorized", body = Errors, content_type = "application/json")
     ),
+    security(
+        ("bearer" = []),
+    ),
     tag = super::PROJECT_TAG
 )]
 pub async fn get_project_info_v2(

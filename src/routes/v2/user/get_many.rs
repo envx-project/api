@@ -6,6 +6,9 @@ use axum::{extract::State, Json};
     get,
     path = "/get-many",
     tag = USER_TAG,
+    security(
+        ("bearer" = []),
+    ),
     responses(
         (status = 200, description = "Users", body = Vec<StrippedUser>),
     )

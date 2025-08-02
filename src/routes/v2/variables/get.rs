@@ -17,7 +17,10 @@ pub struct Variable {
     responses(
         (status = 200, description = "Success", body = Variable),
         (status = 404, description = "Variable not found"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn get(
     State(state): State<AppState>,

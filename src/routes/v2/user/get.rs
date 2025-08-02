@@ -12,7 +12,10 @@ use axum::{
     responses(
         (status = 200, description = "User", body = StrippedUser),
         (status = 404, description = "User not found"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn get_user_v2(
     State(state): State<AppState>,

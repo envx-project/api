@@ -21,7 +21,10 @@ pub struct InviteBody {
     responses(
         (status = 200, description = "Success"),
         (status = 400, description = "Invalid public key"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn new_invite(
     State(state): State<AppState>,

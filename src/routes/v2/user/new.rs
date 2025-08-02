@@ -15,7 +15,10 @@ pub struct NewUserBody {
     responses(
         (status = 200, description = "User ID", body = String),
         (status = 400, description = "Invalid public key"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn new_user_v2(
     State(state): State<AppState>,

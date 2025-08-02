@@ -12,6 +12,9 @@ pub struct NewProjectBody {
     responses(
         (status = OK, description = "Success", body = String, content_type = "text/plain"),
     ),
+    security(
+        ("bearer" = []),
+    ),
     tag = super::PROJECTS_TAG
 )]
 pub async fn new_project_v2(

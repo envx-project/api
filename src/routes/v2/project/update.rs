@@ -13,6 +13,9 @@ pub struct UpdateProjectV2 {
         (status = OK, description = "Success"),
         // (status = UNAUTHORIZED, description = "Unauthorized", body = Errors, content_type = "application/json")
     ),
+    security(
+        ("bearer" = []),
+    ),
     tag = super::PROJECT_TAG
 )]
 pub async fn update(

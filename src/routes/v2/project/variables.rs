@@ -10,7 +10,10 @@ use super::{structs::PartialKey, *};
             body = Vec<PartialKey>),
     (status = 401, description = "Unauthorized. User not in project"),
         // (status = 400, description = "Invalid public key"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn variables(
     State(state): State<AppState>,

@@ -8,7 +8,10 @@ use uuid::Uuid;
     responses(
         // (status = 200, description = "Project ID", body = String),
         // (status = 400, description = "Invalid public key"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn delete(
     State(state): State<AppState>,

@@ -20,7 +20,10 @@ pub struct SetManyBody {
     responses(
         // (status = 200, description = "Project ID", body = String),
         // (status = 400, description = "Invalid public key"),
-    )
+    ),
+    security(
+        ("bearer" = []),
+    ),
 )]
 pub async fn set_many(
     State(state): State<AppState>,

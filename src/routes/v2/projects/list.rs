@@ -12,6 +12,9 @@ pub struct ListProjectsV2 {
     responses(
         (status = OK, description = "Success", body = Vec<ListProjectsV2>, content_type = "application/json"),
     ),
+    security(
+        ("bearer" = []),
+    ),
     tag = super::PROJECTS_TAG
 )]
 pub async fn list_projects_v2(

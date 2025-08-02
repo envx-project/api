@@ -10,6 +10,9 @@ pub struct RemoveUserBody {
     delete,
     path = "/{project_id}",
     tag = PROJECT_TAG,
+    security(
+        ("bearer" = []),
+    ),
     responses(
         (status = 200, description = "Success"),
         (status = 400, description = "Invalid public key"),

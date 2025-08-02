@@ -8,11 +8,14 @@ use routes::{
     *,
 };
 use std::sync::Arc;
-use utoipa::OpenApi;
+use tower_http::trace::TraceLayer;
+use utoipa::{
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+    Modify, OpenApi,
+};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
-use tower_http::trace::TraceLayer;
 
 //#region mod
 mod db;
@@ -53,8 +56,33 @@ async fn main() -> anyhow::Result<()> {
         (name = PROJECT_TAG, description = "Project API endpoints (for single project)"),
         (name = USER_TAG, description = "User API endpoints (for single user)"),
     ),
+    modifiers(&SecurityAddon)
 )]
 struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let scheme = SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("Custom")
+                .description(Some("Enter your Bearer token"))
+                .build(),
+        );
+
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme("bearer", scheme);
+        } else {
+            openapi.components = Some(
+                utoipa::openapi::ComponentsBuilder::new()
+                    .security_scheme("bearer", scheme)
+                    .build(),
+            );
+        }
+    }
+}
 
 async fn init_router() -> anyhow::Result<Router> {
     tracing_subscriber::fmt()
