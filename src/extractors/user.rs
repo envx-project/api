@@ -42,7 +42,6 @@ where
         let state = AppState::from_ref(s);
         // Extract the Authorization header
         let auth_header = &parts.headers.get(header::AUTHORIZATION);
-        dbg!(auth_header);
 
         match auth_header {
             Some(auth_header) => {
