@@ -85,9 +85,7 @@ impl Modify for SecurityAddon {
 }
 
 async fn init_router() -> anyhow::Result<Router> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    tracing_subscriber::fmt().init();
 
     let db = db::db().await?;
 

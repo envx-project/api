@@ -41,8 +41,8 @@ where
     async fn from_request_parts(parts: &mut Parts, s: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(s);
         // Extract the Authorization header
-        let headers = parts.headers.clone();
-        let auth_header = headers.get(header::AUTHORIZATION);
+        let auth_header = &parts.headers.get(header::AUTHORIZATION);
+        dbg!(auth_header);
 
         match auth_header {
             Some(auth_header) => {
