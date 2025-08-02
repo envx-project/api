@@ -12,6 +12,7 @@ use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
+use tower_http::trace::TraceLayer;
 
 //#region mod
 mod db;
@@ -56,9 +57,11 @@ async fn main() -> anyhow::Result<()> {
 struct ApiDoc;
 
 async fn init_router() -> anyhow::Result<Router> {
-    let db = db::db().await?;
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-    // sqlx::migrate!().run(&db).await?;
+    let db = db::db().await?;
 
     let state = AppState { db: Arc::new(db) };
 
@@ -102,6 +105,7 @@ async fn init_router() -> anyhow::Result<Router> {
         .route("/test-auth", post(test_auth::test_auth))
         .routes(routes!(well_known::health_check))
         .nest("/v2/", routes::v2::router(state.clone()))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
         .split_for_parts();
 
