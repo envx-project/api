@@ -31,7 +31,7 @@ pub async fn new_invite(
     UserId(user_id): UserId,
     Json(body): Json<InviteBody>,
 ) -> Result<(), AppError> {
-    unimplemented!();
+    todo!();
 
     // if !user_in_project(user_id, body.project_id, &state.db).await? {
     //     return Err(AppError::Error(Errors::Unauthorized));

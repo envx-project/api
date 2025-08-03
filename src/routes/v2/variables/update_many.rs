@@ -13,5 +13,5 @@ use super::*;
     ),
 )]
 pub async fn update_many() {
-    unimplemented!();
+    todo!();
 }
