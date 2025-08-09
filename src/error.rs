@@ -28,6 +28,18 @@ pub enum AppError {
     Generic(StatusCode, String),
 }
 
+impl From<(StatusCode, String)> for AppError {
+    fn from((status_code, string): (StatusCode, String)) -> Self {
+        AppError::Generic(status_code, string)
+    }
+}
+
+impl From<(StatusCode, &'static str)> for AppError {
+    fn from((status_code, string): (StatusCode, &'static str)) -> Self {
+        AppError::Generic(status_code, string.into())
+    }
+}
+
 impl From<anyhow::Error> for AppError {
     fn from(e: anyhow::Error) -> Self {
         AppError::AnyhowError(AnyhowError(e))

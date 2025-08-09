@@ -6,7 +6,7 @@ use crate::{
 use anyhow::bail;
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{header, request::Parts},
+    http::{header, request::Parts, StatusCode},
 };
 use pgp::{composed::message::Message, Deserializable};
 
@@ -51,7 +51,10 @@ where
                 let formatted_token = match serde_json::from_str::<Token>(auth_token) {
                     Ok(formatted_token) => formatted_token,
                     Err(_) => {
-                        return Err(AppError::Error(Errors::Unauthorized));
+                        return Err(AppError::Generic(
+                            StatusCode::UNAUTHORIZED,
+                            "Invalid token".into(),
+                        ));
                     }
                 };
 
@@ -60,9 +63,41 @@ where
                 // parse content into a UTC datetime
                 let user_id = match validate_challenge(auth_token, state.db).await {
                     Ok(user_id) => user_id,
-                    Err(_) => {
-                        return Err(AppError::Error(Errors::Unauthorized));
-                    }
+                    Err(e) => match e {
+                        ChallengeError::InvalidChallenge => {
+                            return Err((StatusCode::BAD_REQUEST, "Invalid challenge").into())
+                        }
+                        ChallengeError::InvalidSignature => {
+                            return Err((StatusCode::UNAUTHORIZED, "Invalid signature").into())
+                        }
+                        ChallengeError::NoContent => {
+                            return Err((StatusCode::UNAUTHORIZED, "No content").into())
+                        }
+                        ChallengeError::TooOld => {
+                            return Err((StatusCode::UNAUTHORIZED, "Too old").into())
+                        }
+                        ChallengeError::TooYoung => {
+                            return Err((StatusCode::UNAUTHORIZED, "Too young").into())
+                        }
+                        ChallengeError::ChronoParseError(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
+                        }
+                        ChallengeError::PgpError(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
+                        }
+                        ChallengeError::SqlxError(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
+                        }
+                        ChallengeError::Utf8Error(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
+                        }
+                        ChallengeError::UuidError(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
+                        }
+                        ChallengeError::Generic(e) => {
+                            return Err(AppError::Error(Errors::InternalServerError(e)))
+                        }
+                    },
                 };
 
                 Ok(UserId(user_id))
@@ -72,15 +107,65 @@ where
     }
 }
 
-async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Uuid> {
+enum ChallengeError {
+    InvalidChallenge,
+    InvalidSignature,
+    NoContent,
+    TooOld,
+    TooYoung,
+    Generic(anyhow::Error),
+    ChronoParseError(chrono::ParseError),
+    PgpError(pgp::errors::Error),
+    SqlxError(sqlx::Error),
+    Utf8Error(std::str::Utf8Error),
+    UuidError(uuid::Error),
+}
+
+impl From<anyhow::Error> for ChallengeError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Generic(e)
+    }
+}
+
+impl From<chrono::ParseError> for ChallengeError {
+    fn from(e: chrono::ParseError) -> Self {
+        Self::ChronoParseError(e)
+    }
+}
+
+impl From<pgp::errors::Error> for ChallengeError {
+    fn from(e: pgp::errors::Error) -> Self {
+        Self::PgpError(e)
+    }
+}
+
+impl From<sqlx::Error> for ChallengeError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::SqlxError(e)
+    }
+}
+
+impl From<std::str::Utf8Error> for ChallengeError {
+    fn from(e: std::str::Utf8Error) -> Self {
+        Self::Utf8Error(e)
+    }
+}
+
+impl From<uuid::Error> for ChallengeError {
+    fn from(e: uuid::Error) -> Self {
+        Self::UuidError(e)
+    }
+}
+
+async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeError> {
     let (user_id, challenge) = match challenge.split_once(':') {
         Some((user_id, challenge)) => (Uuid::parse_str(user_id)?, challenge),
-        None => bail!("Invalid challenge"),
+        None => Err(ChallengeError::InvalidChallenge)?,
     };
 
     let (signed_challenge, _) = Message::from_string(challenge)?;
     let Some(content) = signed_challenge.get_content()? else {
-        bail!("No content in signed challenge")
+        Err(ChallengeError::NoContent)?
     };
 
     let challenge = std::str::from_utf8(&content)?;
@@ -89,10 +174,10 @@ async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Uuid> {
     // check to make sure its not more than 10 minutes old
     let diff = Utc::now().signed_duration_since(challenge);
     if diff.num_minutes() > 10 {
-        bail!("Challenge is too old")
+        Err(ChallengeError::TooOld)?
     }
     if diff.num_seconds() < 0 {
-        bail!("Challenge is from the future")
+        Err(ChallengeError::TooYoung)?
     }
 
     let user_pubkey = sqlx::query!("SELECT public_key FROM users WHERE id = $1", user_id)
@@ -103,7 +188,7 @@ async fn validate_challenge(challenge: &str, db: DB) -> anyhow::Result<Uuid> {
     let verified = verify_signature(signed_challenge, user_pubkey)?;
 
     if !verified {
-        bail!("Invalid signature")
+        Err(ChallengeError::InvalidSignature)?
     }
 
     Ok(user_id)
