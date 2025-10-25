@@ -1,5 +1,5 @@
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use axum::extract::Path;
+use axum::{extract::Path, http::StatusCode};
 use uuid::Uuid;
 
 use crate::{extractors::user::UserId, structs::ProjectInvite};
@@ -48,6 +48,10 @@ pub async fn accept_invite(
 
     if !is_valid {
         return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    if invite.invited_id.is_some() {
+        return Err(AppError::Generic(StatusCode::CONFLICT, "Invite already accepted".into()));
     }
 
     let id = sqlx::query!(
