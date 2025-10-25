@@ -1,17 +1,20 @@
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+    Argon2,
+};
+use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
-use pgp::{Deserializable, Message};
 use uuid::Uuid;
 
-use super::{
-    extractors::user::UserId, helpers::project::user_in_project, utils::rpgp::verify_signature, *,
-};
+use super::{extractors::user::UserId, helpers::project::user_in_project, *};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct InviteBody {
     invite_code: Uuid,
     project_id: Uuid,
-    author_signature: String,
+    verifier: String,
     exp: DateTime<Utc>,
+    ciphertext: String,
 }
 
 #[utoipa::path(
@@ -31,40 +34,35 @@ pub async fn new_invite(
     UserId(user_id): UserId,
     Json(body): Json<InviteBody>,
 ) -> Result<(), AppError> {
-    todo!();
+    if !user_in_project(user_id, body.project_id, &state.db).await? {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
 
-    // if !user_in_project(user_id, body.project_id, &state.db).await? {
-    //     return Err(AppError::Error(Errors::Unauthorized));
-    // }
-    //
-    // {
-    //     let user_pubkey = sqlx::query!("SELECT public_key FROM users WHERE id = $1", user_id)
-    //         .fetch_one(&*state.db)
-    //         .await?
-    //         .public_key;
-    //     let (author_signature, _) = Message::from_string(&body.author_signature)
-    //         .context("Failed to parse author signature")?;
-    //     if !verify_signature(author_signature, user_pubkey)? {
-    //         return Err(AppError::Error(Errors::Unauthorized));
-    //     }
-    // }
-    //
-    // sqlx::query!(
-    //     "INSERT INTO project_invites (
-    //         project_id,
-    //         author_id,
-    //         author_signature,
-    //         expires_at
-    //     )
-    //     VALUES ($1, $2, $3, $4)",
-    //     body.project_id,
-    //     user_id,
-    //     body.author_signature,
-    //     body.exp
-    // )
-    // .execute(&*state.db)
-    // .await
-    // .context("Failed to insert project invite")?;
-    //
-    // Ok(())
+    let verifier_hash = Argon2::default()
+        .hash_password(body.verifier.as_bytes(), &SaltString::generate(&mut OsRng))
+        .map_err(|e| AppError::Generic(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .to_string();
+
+    sqlx::query!(
+        "INSERT INTO project_invites (
+            project_id,
+            author_id,
+            expires_at,
+            verifier_argon2id,
+            ciphertext,
+            id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)",
+        body.project_id,
+        user_id,
+        body.exp,
+        verifier_hash,
+        body.ciphertext,
+        body.invite_code
+    )
+    .execute(&*state.db)
+    .await
+    .context("Failed to insert project invite")?;
+
+    Ok(())
 }

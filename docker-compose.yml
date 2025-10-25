@@ -1,6 +1,7 @@
+name: "envx_api"
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: postgres_envx_api
     environment:
       POSTGRES_USER: postgres

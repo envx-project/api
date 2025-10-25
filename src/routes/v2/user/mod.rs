@@ -6,8 +6,8 @@ pub(self) use utoipa::ToSchema;
 pub(self) use uuid::Uuid;
 
 mod get;
-mod new;
 mod get_many;
+mod new;
 
 pub const USER_TAG: &str = "user";
 
