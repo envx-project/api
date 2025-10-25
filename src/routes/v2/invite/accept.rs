@@ -30,7 +30,7 @@ pub async fn accept_invite(
     Path(invite_code): Path<Uuid>,
     UserId(user_id): UserId,
     Json(body): Json<AcceptInviteBody>,
-) -> Result<Json<ProjectInvite>, AppError> {
+) -> Result<String, AppError> {
     let invite = sqlx::query_as!(
         ProjectInvite,
         "SELECT * FROM project_invites WHERE id = $1",
@@ -50,6 +50,14 @@ pub async fn accept_invite(
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
+    if invite.ciphertext.is_none() || invite.invited_id.is_some() {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
+    if invite.expires_at < chrono::Utc::now() {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
+
     sqlx::query!(
         "UPDATE project_invites SET invited_id = $1, ciphertext = NULL WHERE id = $2",
         user_id,
@@ -59,5 +67,5 @@ pub async fn accept_invite(
     .await
     .context("Failed to update invite")?;
 
-    Ok(invite.into())
+    Ok(invite.ciphertext.unwrap())
 }

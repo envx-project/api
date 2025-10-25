@@ -39,6 +39,6 @@ pub struct ProjectInvite {
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub verifier_argon2id: String,
-    pub ciphertext: String,
+    pub ciphertext: Option<String>,
     pub invited_id: Option<Uuid>,
 }
