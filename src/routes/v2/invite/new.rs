@@ -65,5 +65,5 @@ pub async fn new_invite(
     .await
     .context("Failed to insert project invite")?;
 
-    Ok(invite_code)
+    Ok(invite_code.into())
 }

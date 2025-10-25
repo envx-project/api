@@ -50,22 +50,26 @@ pub async fn accept_invite(
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    if invite.ciphertext.is_none() || invite.invited_id.is_some() {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    if invite.expires_at < chrono::Utc::now() {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    sqlx::query!(
-        "UPDATE project_invites SET invited_id = $1, ciphertext = NULL WHERE id = $2",
+    let id = sqlx::query!(
+        "UPDATE project_invites 
+        SET invited_id = $1,
+        ciphertext = NULL 
+        WHERE id = $2
+            AND invited_id IS NULL
+            AND ciphertext IS NOT NULL
+            AND expires_at > NOW()
+        RETURNING id;
+        ",
         user_id,
         invite_code
     )
-    .execute(&*state.db)
+    .fetch_optional(&*state.db)
     .await
     .context("Failed to update invite")?;
+
+    if id.is_none() {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
 
     Ok(invite.ciphertext.unwrap())
 }
