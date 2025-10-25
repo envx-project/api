@@ -10,7 +10,6 @@ use super::{extractors::user::UserId, helpers::project::user_in_project, *};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct InviteBody {
-    invite_code: Uuid,
     project_id: Uuid,
     verifier: String,
     exp: DateTime<Utc>,
@@ -33,7 +32,7 @@ pub async fn new_invite(
     State(state): State<AppState>,
     UserId(user_id): UserId,
     Json(body): Json<InviteBody>,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     if !user_in_project(user_id, body.project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
@@ -42,6 +41,8 @@ pub async fn new_invite(
         .hash_password(body.verifier.as_bytes(), &SaltString::generate(&mut OsRng))
         .map_err(|e| AppError::Generic(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .to_string();
+
+    let invite_code = Uuid::new_v4();
 
     sqlx::query!(
         "INSERT INTO project_invites (
@@ -58,11 +59,11 @@ pub async fn new_invite(
         body.exp,
         verifier_hash,
         body.ciphertext,
-        body.invite_code
+        invite_code
     )
     .execute(&*state.db)
     .await
     .context("Failed to insert project invite")?;
 
-    Ok(())
+    Ok(invite_code)
 }
