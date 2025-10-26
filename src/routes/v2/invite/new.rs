@@ -11,7 +11,6 @@ use super::{extractors::user::UserId, helpers::project::user_in_project, *};
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct InviteBody {
     project_id: Uuid,
-    exp: DateTime<Utc>,
     ciphertext: String,
 }
 
@@ -48,6 +47,8 @@ pub async fn new_invite(
         .map_err(|e| AppError::Generic(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .to_string();
 
+    let exp = Utc::now() + chrono::Duration::hours(1);
+
     let res = sqlx::query!(
         "INSERT INTO project_invites (
             project_id,
@@ -61,7 +62,7 @@ pub async fn new_invite(
         ",
         body.project_id,
         user_id,
-        body.exp,
+        exp,
         verifier_hash,
         body.ciphertext,
     )
