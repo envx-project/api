@@ -26,7 +26,7 @@ pub struct InviteResponse {
     path = "/new",
     tag = INVITE_TAG,
     responses(
-        (status = 200, description = "Success"),
+        (status = 200, description = "Success", body = InviteResponse),
         (status = 400, description = "Invalid public key"),
     ),
     security(
@@ -48,31 +48,29 @@ pub async fn new_invite(
         .map_err(|e| AppError::Generic(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .to_string();
 
-    let invite_code = Uuid::new_v4();
-
-    sqlx::query!(
+    let res = sqlx::query!(
         "INSERT INTO project_invites (
             project_id,
             author_id,
             expires_at,
             verifier_argon2id,
-            ciphertext,
-            id
+            ciphertext
         )
-        VALUES ($1, $2, $3, $4, $5, $6)",
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id;
+        ",
         body.project_id,
         user_id,
         body.exp,
         verifier_hash,
         body.ciphertext,
-        invite_code,
     )
-    .execute(&*state.db)
+    .fetch_one(&*state.db)
     .await
     .context("Failed to insert project invite")?;
 
     Ok(Json(InviteResponse {
-        invite_code,
+        invite_code: res.id,
         verifier,
     }))
 }

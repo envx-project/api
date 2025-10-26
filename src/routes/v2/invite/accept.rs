@@ -16,7 +16,7 @@ pub struct AcceptInviteBody {
     path = "/accept/{invite_code}",
     tag = INVITE_TAG,
     responses(
-        (status = 200, description = "Success"),
+        (status = 200, description = "Success", body = String),
         (status = 400, description = "Invalid public key"),
         (status = 404, description = "Invite not found"),
         (status = 409, description = "Invite already accepted"),
