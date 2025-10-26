@@ -11,9 +11,14 @@ use super::{extractors::user::UserId, helpers::project::user_in_project, *};
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct InviteBody {
     project_id: Uuid,
-    verifier: String,
     exp: DateTime<Utc>,
     ciphertext: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct InviteResponse {
+    pub invite_code: Uuid,
+    pub verifier: Uuid,
 }
 
 #[utoipa::path(
@@ -32,13 +37,14 @@ pub async fn new_invite(
     State(state): State<AppState>,
     UserId(user_id): UserId,
     Json(body): Json<InviteBody>,
-) -> Result<String, AppError> {
+) -> Result<Json<InviteResponse>, AppError> {
     if !user_in_project(user_id, body.project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
+    let verifier = Uuid::new_v4();
     let verifier_hash = Argon2::default()
-        .hash_password(body.verifier.as_bytes(), &SaltString::generate(&mut OsRng))
+        .hash_password(verifier.as_bytes(), &SaltString::generate(&mut OsRng))
         .map_err(|e| AppError::Generic(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .to_string();
 
@@ -59,11 +65,14 @@ pub async fn new_invite(
         body.exp,
         verifier_hash,
         body.ciphertext,
-        invite_code
+        invite_code,
     )
     .execute(&*state.db)
     .await
     .context("Failed to insert project invite")?;
 
-    Ok(invite_code.into())
+    Ok(Json(InviteResponse {
+        invite_code,
+        verifier,
+    }))
 }
