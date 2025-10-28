@@ -151,8 +151,6 @@ pub async fn update_many_variables(
     .await
     .context("Failed to update variables")?;
 
-    dbg!(&variables);
-
     Ok(Json(
         variables
             .iter()

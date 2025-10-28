@@ -33,9 +33,9 @@ pub struct PartialKey {
 
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct ProjectInvite {
-    pub id: String,
-    pub project_id: String,
-    pub author_id: String,
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub author_id: Uuid,
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub verifier_argon2id: String,

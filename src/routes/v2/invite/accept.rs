@@ -1,5 +1,5 @@
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use axum::{extract::Path, http::StatusCode};
+use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::{extractors::user::UserId, structs::ProjectInvite};
@@ -12,12 +12,18 @@ pub struct AcceptInviteBody {
     pub verifier: Uuid,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct AcceptInviteReturnType {
+    pub id: String,
+    pub ciphertext: String,
+}
+
 #[utoipa::path(
     post,
     path = "/accept",
     tag = INVITE_TAG,
     responses(
-        (status = 200, description = "Success", body = String),
+        (status = 200, description = "Success", body = AcceptInviteReturnType),
         (status = 400, description = "Invalid public key"),
         (status = 404, description = "Invite not found"),
         (status = 409, description = "Invite already accepted"),
@@ -30,7 +36,7 @@ pub async fn accept_invite(
     State(state): State<AppState>,
     UserId(user_id): UserId,
     Json(body): Json<AcceptInviteBody>,
-) -> Result<String, AppError> {
+) -> Result<Json<AcceptInviteReturnType>, AppError> {
     let invite = sqlx::query_as!(
         ProjectInvite,
         "SELECT * FROM project_invites WHERE id = $1",
@@ -74,9 +80,23 @@ pub async fn accept_invite(
     .await
     .context("Failed to update invite")?;
 
+    sqlx::query!(
+        "INSERT INTO user_project_relations (user_id, project_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING",
+        &user_id,
+        &invite.project_id,
+    )
+    .execute(&*state.db)
+    .await
+    .context("Failed to insert user project relations")?;
+
     if id.is_none() {
         return Err(AppError::Error(Errors::Unauthorized));
     }
 
-    Ok(invite.ciphertext.unwrap())
+    Ok(Json(AcceptInviteReturnType {
+        ciphertext: invite.ciphertext.unwrap(),
+        id: id.unwrap().id.to_string(),
+    }))
 }
