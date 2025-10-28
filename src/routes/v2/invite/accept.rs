@@ -8,12 +8,13 @@ use super::*;
 
 #[derive(Deserialize, ToSchema)]
 pub struct AcceptInviteBody {
-    pub verifier: String,
+    pub code: Uuid,
+    pub verifier: Uuid,
 }
 
 #[utoipa::path(
     post,
-    path = "/accept/{invite_code}",
+    path = "/accept",
     tag = INVITE_TAG,
     responses(
         (status = 200, description = "Success", body = String),
@@ -27,14 +28,13 @@ pub struct AcceptInviteBody {
 )]
 pub async fn accept_invite(
     State(state): State<AppState>,
-    Path(invite_code): Path<Uuid>,
     UserId(user_id): UserId,
     Json(body): Json<AcceptInviteBody>,
 ) -> Result<String, AppError> {
     let invite = sqlx::query_as!(
         ProjectInvite,
         "SELECT * FROM project_invites WHERE id = $1",
-        invite_code
+        body.code
     )
     .fetch_one(&*state.db)
     .await
@@ -51,7 +51,10 @@ pub async fn accept_invite(
     }
 
     if invite.invited_id.is_some() {
-        return Err(AppError::Generic(StatusCode::CONFLICT, "Invite already accepted".into()));
+        return Err(AppError::Generic(
+            StatusCode::CONFLICT,
+            "Invite already accepted".into(),
+        ));
     }
 
     let id = sqlx::query!(
@@ -65,7 +68,7 @@ pub async fn accept_invite(
         RETURNING id;
         ",
         user_id,
-        invite_code
+        body.code
     )
     .fetch_optional(&*state.db)
     .await
