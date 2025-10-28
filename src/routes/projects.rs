@@ -44,13 +44,6 @@ pub async fn get_project_info(
     Ok(Json(ProjectInfo { project_id, users }))
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ProjectInfoV2 {
-    project_id: String,
-    project_name: String,
-    users: Vec<User>,
-}
-
 pub async fn get_project_variables(
     State(state): State<AppState>,
     UserId(user_id): UserId,

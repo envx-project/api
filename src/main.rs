@@ -26,7 +26,6 @@ mod routes;
 mod state;
 mod structs;
 mod traits;
-mod utils;
 
 //#region global use
 pub(crate) use anyhow::Context;

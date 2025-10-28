@@ -68,9 +68,6 @@ where
                         ChallengeError::InvalidSignature => {
                             return Err((StatusCode::UNAUTHORIZED, "Invalid signature").into())
                         }
-                        ChallengeError::NoContent => {
-                            return Err((StatusCode::UNAUTHORIZED, "No content").into())
-                        }
                         ChallengeError::TooOld => {
                             return Err((StatusCode::UNAUTHORIZED, "Too old").into())
                         }
@@ -95,6 +92,9 @@ where
                         ChallengeError::Generic(e) => {
                             return Err(AppError::Error(Errors::InternalServerError(e)))
                         }
+                        ChallengeError::IoError(error) => {
+                            return Err(AppError::Error(Errors::InternalServerError(error.into())))
+                        }
                     },
                 };
 
@@ -108,7 +108,6 @@ where
 enum ChallengeError {
     InvalidChallenge,
     InvalidSignature,
-    NoContent,
     TooOld,
     TooYoung,
     Generic(anyhow::Error),
@@ -117,6 +116,7 @@ enum ChallengeError {
     SqlxError(sqlx::Error),
     Utf8Error(std::str::Utf8Error),
     UuidError(uuid::Error),
+    IoError(std::io::Error),
 }
 
 impl From<anyhow::Error> for ChallengeError {
@@ -155,6 +155,12 @@ impl From<uuid::Error> for ChallengeError {
     }
 }
 
+impl From<std::io::Error> for ChallengeError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
+}
+
 async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeError> {
     let (user_id, challenge) = match challenge.split_once(':') {
         Some((user_id, challenge)) => (Uuid::parse_str(user_id)?, challenge),
@@ -163,17 +169,17 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
 
     let (mut signed_challenge, _) = Message::from_string(challenge)?;
 
-    let content = signed_challenge.as_data_string().unwrap();
+    let content = signed_challenge.as_data_string()?;
 
     let challenge: DateTime<Utc> = content.parse()?;
 
     // check to make sure its not more than 10 minutes old
     let diff = Utc::now().signed_duration_since(challenge);
-    if diff.num_minutes() > 10 {
-        Err(ChallengeError::TooOld)?
+    if diff.num_seconds() > 10 * 60 {
+        return Err(ChallengeError::TooOld)?;
     }
     if diff.num_seconds() < 0 {
-        Err(ChallengeError::TooYoung)?
+        return Err(ChallengeError::TooYoung)?;
     }
 
     let user_pubkey = sqlx::query!("SELECT public_key FROM users WHERE id = $1", user_id)
@@ -186,7 +192,7 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
         .is_ok();
 
     if !verified {
-        Err(ChallengeError::InvalidSignature)?
+        return Err(ChallengeError::InvalidSignature)?;
     }
 
     Ok(user_id)
