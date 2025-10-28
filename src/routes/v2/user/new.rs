@@ -1,5 +1,5 @@
 use super::*;
-use pgp::{Deserializable, SignedPublicKey};
+use pgp::composed::{Deserializable, SignedPublicKey};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct NewUserBody {

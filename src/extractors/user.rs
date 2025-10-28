@@ -1,14 +1,12 @@
 use crate::{
     error::{AppError, Errors},
     state::{AppState, DB},
-    utils::rpgp::verify_signature,
 };
-use anyhow::bail;
 use axum::{
     extract::{FromRef, FromRequestParts},
     http::{header, request::Parts, StatusCode},
 };
-use pgp::{composed::message::Message, Deserializable};
+use pgp::composed::{Deserializable, Message, SignedPublicKey};
 
 use chrono::{DateTime, Utc};
 use sqlx::types::Uuid;
@@ -163,13 +161,11 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
         None => Err(ChallengeError::InvalidChallenge)?,
     };
 
-    let (signed_challenge, _) = Message::from_string(challenge)?;
-    let Some(content) = signed_challenge.get_content()? else {
-        Err(ChallengeError::NoContent)?
-    };
+    let (mut signed_challenge, _) = Message::from_string(challenge)?;
 
-    let challenge = std::str::from_utf8(&content)?;
-    let challenge: DateTime<Utc> = challenge.parse()?;
+    let content = signed_challenge.as_data_string().unwrap();
+
+    let challenge: DateTime<Utc> = content.parse()?;
 
     // check to make sure its not more than 10 minutes old
     let diff = Utc::now().signed_duration_since(challenge);
@@ -185,7 +181,9 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
         .await?
         .public_key;
 
-    let verified = verify_signature(signed_challenge, user_pubkey)?;
+    let verified = signed_challenge
+        .verify(&SignedPublicKey::from_string(&user_pubkey)?.0)
+        .is_ok();
 
     if !verified {
         Err(ChallengeError::InvalidSignature)?

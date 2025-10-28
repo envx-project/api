@@ -4,7 +4,7 @@ use crate::{
     *,
 };
 use axum::extract::Path;
-use pgp::{Deserializable, SignedPublicKey};
+use pgp::composed::{Deserializable, SignedPublicKey};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]

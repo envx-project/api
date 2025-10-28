@@ -3,7 +3,7 @@ use argon2::{
     Argon2,
 };
 use axum::http::StatusCode;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use uuid::Uuid;
 
 use super::{extractors::user::UserId, helpers::project::user_in_project, *};

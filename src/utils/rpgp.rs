@@ -1,6 +1,5 @@
 use anyhow::{Context, Ok, Result};
-use pgp::composed::message::Message;
-use pgp::{composed::signed_key::*, Deserializable};
+use pgp::composed::{Message, SignedPublicKey, Deserializable};
 
 // use crypto_hash::{hex_digest, Algorithm};
 // use hex::ToHex;
