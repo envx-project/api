@@ -14,7 +14,8 @@ pub struct AcceptInviteBody {
 
 #[derive(Serialize, ToSchema)]
 pub struct AcceptInviteReturnType {
-    pub id: String,
+    pub project_id: String,
+    pub invite_id: String,
     pub ciphertext: String,
 }
 
@@ -97,6 +98,7 @@ pub async fn accept_invite(
 
     Ok(Json(AcceptInviteReturnType {
         ciphertext: invite.ciphertext.unwrap(),
-        id: id.unwrap().id.to_string(),
+        invite_id: invite.id.to_string(),
+        project_id: invite.project_id.to_string(),
     }))
 }
