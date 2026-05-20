@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 
+use crate::extractors::client_ip::ClientIp;
+use crate::helpers::caps;
+use crate::helpers::caps::check_update_caps_grouped;
 use crate::{structs::Variable, traits::to_uuid::ToUuid};
 
 use super::*;
@@ -24,6 +27,7 @@ pub struct UpdateManyBody {
 pub async fn update_many(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<UpdateManyBody>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let project_ids = body
@@ -49,6 +53,19 @@ pub async fn update_many(
             return Err(AppError::Error(Errors::Unauthorized));
         }
     }
+
+    let all_values: Vec<&str> = body.variables.iter().map(|v| v.value.as_str()).collect();
+    caps::check_per_value(&state.caps, &all_values)?;
+    check_update_caps_grouped(
+        &state,
+        user_id,
+        ip,
+        body.variables
+            .iter()
+            .map(|v| (v.project_id.as_str(), v.id.as_str(), v.value.as_str()))
+            .collect::<Vec<_>>(),
+    )
+    .await?;
 
     // use UNNEST to update all the variables at once
     let variables = sqlx::query!(

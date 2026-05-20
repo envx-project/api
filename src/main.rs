@@ -18,6 +18,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 //#region mod
+mod config;
 mod db;
 mod error;
 mod extractors;
@@ -43,7 +44,11 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     println!("listening on http://localhost:{}", port);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -88,7 +93,12 @@ async fn init_router() -> anyhow::Result<Router> {
 
     let db = db::db().await?;
 
-    let state = AppState { db: Arc::new(db) };
+    let caps = config::Caps::from_env();
+    println!("caps: {:?}", caps);
+    let state = AppState {
+        db: Arc::new(db),
+        caps: Arc::new(caps),
+    };
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         // variables

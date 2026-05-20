@@ -1,3 +1,6 @@
+use crate::extractors::client_ip::ClientIp;
+use crate::helpers::caps;
+
 use super::*;
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -28,6 +31,7 @@ pub struct SetManyBody {
 pub async fn set_many(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<SetManyBody>,
 ) -> Result<Json<Vec<Uuid>>, AppError> {
     let project_id = body.project_id;
@@ -41,6 +45,13 @@ pub async fn set_many(
         .into_iter()
         .map(|v| (v.value, v.tag.unwrap_or_default()))
         .unzip();
+
+    let value_refs: Vec<&str> = values.iter().map(String::as_str).collect();
+    caps::check_per_value(&state.caps, &value_refs)?;
+    caps::check_project_for_insert(&state.caps, &state.db, project_id, &value_refs).await?;
+    let delta: i64 = value_refs.iter().map(|v| v.len() as i64).sum();
+    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
+    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
 
     let variables = sqlx::query!(
         "INSERT INTO variables (value, project_id, tag)

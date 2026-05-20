@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 
+use crate::extractors::client_ip::ClientIp;
+use crate::helpers::caps;
+use crate::helpers::caps::check_update_caps_grouped;
 use crate::structs::Variable;
 use crate::traits::to_uuid::ToUuid;
 use crate::*;
@@ -22,6 +25,7 @@ pub struct NewVariableReturnType {
 pub async fn new_variable(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<NewVariableBody>,
 ) -> Result<Json<NewVariableReturnType>, AppError> {
     let project_id = body.project_id.to_uuid()?;
@@ -29,6 +33,13 @@ pub async fn new_variable(
     if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
+
+    let values = [body.value.as_str()];
+    caps::check_per_value(&state.caps, &values)?;
+    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
+    let delta = body.value.len() as i64;
+    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
+    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
 
     let variable = sqlx::query!(
         "INSERT INTO variables (value, project_id, tag) VALUES ($1, $2, $3) RETURNING id",
@@ -59,6 +70,7 @@ pub struct SetManyReturnType {
 pub async fn set_many_variables(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<SetManyBody>,
 ) -> Result<Json<Vec<SetManyReturnType>>, AppError> {
     let project_id = body.project_id.to_uuid()?;
@@ -66,6 +78,13 @@ pub async fn set_many_variables(
     if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
+
+    let values: Vec<&str> = body.variables.iter().map(String::as_str).collect();
+    caps::check_per_value(&state.caps, &values)?;
+    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
+    let delta: i64 = values.iter().map(|v| v.len() as i64).sum();
+    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
+    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
 
     let variables = sqlx::query!(
         "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
@@ -115,6 +134,7 @@ pub struct UpdateManyBody {
 pub async fn update_many_variables(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<UpdateManyBody>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let projects = body
@@ -140,6 +160,19 @@ pub async fn update_many_variables(
             return Err(AppError::Error(Errors::Unauthorized));
         }
     }
+
+    let all_values: Vec<&str> = body.variables.iter().map(|v| v.value.as_str()).collect();
+    caps::check_per_value(&state.caps, &all_values)?;
+    check_update_caps_grouped(
+        &state,
+        user_id,
+        ip,
+        body.variables
+            .iter()
+            .map(|v| (v.project_id.as_str(), v.id.as_str(), v.value.as_str()))
+            .collect::<Vec<_>>(),
+    )
+    .await?;
 
     // use UNNEST to update all the variables at once
     let variables = sqlx::query!(
@@ -204,6 +237,7 @@ pub struct V2SetManyReturnType {
 pub async fn set_many_variables_v2(
     State(state): State<AppState>,
     UserId(user_id): UserId,
+    ClientIp(ip): ClientIp,
     Json(body): Json<V2SetManyBody>,
 ) -> Result<Json<Vec<V2SetManyReturnType>>, AppError> {
     let project_id = body.project_id.to_uuid()?;
@@ -211,6 +245,13 @@ pub async fn set_many_variables_v2(
     if !user_in_project(user_id, project_id, &state.db).await? {
         return Err(AppError::Error(Errors::Unauthorized));
     }
+
+    let values: Vec<&str> = body.variables.iter().map(|v| v.value.as_str()).collect();
+    caps::check_per_value(&state.caps, &values)?;
+    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
+    let delta: i64 = values.iter().map(|v| v.len() as i64).sum();
+    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
+    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
 
     let variables = sqlx::query!(
         "INSERT INTO variables (value, project_id, tag) SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) RETURNING id",

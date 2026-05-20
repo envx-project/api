@@ -19,6 +19,7 @@ sqlx = { version = "0.8", features = [
   "macros",
   "json",
   "migrate",
+  "ipnetwork",
 ] }
 
 argon2 = "0.5.0"
