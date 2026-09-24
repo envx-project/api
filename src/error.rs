@@ -26,6 +26,7 @@ pub enum AppError {
     AnyhowError(AnyhowError),
     Error(Errors),
     Generic(StatusCode, String),
+    Protocol(StatusCode, &'static str, &'static str),
 }
 
 impl From<(StatusCode, String)> for AppError {
@@ -97,6 +98,11 @@ impl IntoResponse for AppError {
                 Errors::NotFound => (StatusCode::NOT_FOUND, "Not found").into_response(),
             },
             AppError::Generic(status_code, string) => (status_code, string).into_response(),
+            AppError::Protocol(status, code, message) => (
+                status,
+                axum::Json(serde_json::json!({"code":code,"message":message})),
+            )
+                .into_response(),
         }
     }
 }

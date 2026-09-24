@@ -84,22 +84,8 @@ pub async fn add_user(
     Path(project_id): Path<uuid::Uuid>,
     Json(body): Json<AddUserBody>,
 ) -> Result<(), AppError> {
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let user_to_insert = body.user_id.to_uuid()?;
-
-    sqlx::query!(
-        "INSERT INTO user_project_relations (user_id, project_id) VALUES ($1, $2)",
-        user_to_insert,
-        project_id
-    )
-    .execute(&*state.db)
-    .await
-    .context("Failed to add user to project")?;
-
-    Ok(())
+    let _ = (state, user_id, project_id, body);
+    Err(crate::helpers::project_snapshot::upgrade())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,26 +99,12 @@ pub async fn remove_user(
     Path(project_id): Path<uuid::Uuid>,
     Json(body): Json<RemoveUserBody>,
 ) -> Result<(), AppError> {
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let users_to_remove = body
+    let users = body
         .users
         .iter()
-        .map(|user| user.to_uuid().unwrap())
-        .collect::<Vec<UuidValidator>>();
-
-    sqlx::query!(
-        "DELETE FROM user_project_relations WHERE user_id = ANY($1::uuid[]) AND project_id = $2",
-        &users_to_remove,
-        project_id
-    )
-    .execute(&*state.db)
-    .await
-    .context("Failed to remove user from project")?;
-
-    Ok(())
+        .map(|user| user.to_uuid())
+        .collect::<Result<Vec<UuidValidator>, _>>()?;
+    crate::helpers::project_snapshot::remove_members(&state, project_id, user_id, &users).await
 }
 
 pub async fn list_projects(

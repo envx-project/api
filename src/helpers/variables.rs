@@ -29,6 +29,11 @@ pub async fn update_many(
     // Stable lock order prevents opposing batches from deadlocking.
     parsed.sort_unstable();
     let mut tx = state.db.begin().await?;
+    let projects: std::collections::BTreeSet<_> =
+        parsed.iter().map(|(_, project)| *project).collect();
+    for project in projects {
+        super::project_snapshot::lock_project(&mut tx, project).await?;
+    }
     for (id, project) in &parsed {
         let authorized: Option<Uuid> = sqlx::query_scalar("SELECT v.id FROM variables v JOIN user_project_relations upr ON upr.project_id=v.project_id WHERE v.id=$1 AND v.project_id=$2 AND upr.user_id=$3 FOR UPDATE OF v FOR SHARE OF upr")
             .bind(id).bind(project).bind(user_id).fetch_optional(&mut *tx).await?;
@@ -89,12 +94,8 @@ pub async fn replace_many(
     let refs = values.iter().map(String::as_str).collect::<Vec<_>>();
     caps::check_per_value(&state.caps, &refs)?;
     let mut tx = state.db.begin().await?;
-    // Serialize replacements in a project and hold membership through commit.
-    let authorized: Option<Uuid> = sqlx::query_scalar("SELECT p.id FROM projects p JOIN user_project_relations upr ON upr.project_id=p.id WHERE p.id=$1 AND upr.user_id=$2 FOR UPDATE OF p FOR SHARE OF upr")
-        .bind(project).bind(user_id).fetch_optional(&mut *tx).await?;
-    if authorized.is_none() {
-        return Err(Errors::Unauthorized.into());
-    }
+    super::project_snapshot::lock_project(&mut tx, project).await?;
+    super::project_snapshot::authorize(&mut tx, project, user_id).await?;
     let removed: Vec<String> = sqlx::query_scalar(
         "DELETE FROM variables WHERE project_id=$1 AND id=ANY($2) RETURNING value",
     )
@@ -124,6 +125,46 @@ pub async fn replace_many(
         .bind(project).bind(&values).fetch_all(&mut *tx).await?;
     tx.commit().await?;
     Ok(ids)
+}
+
+pub async fn insert_many(
+    state: &AppState,
+    user: Uuid,
+    ip: IpAddr,
+    project: Uuid,
+    values: Vec<String>,
+    tags: Vec<String>,
+) -> Result<Vec<Uuid>, AppError> {
+    let refs = values.iter().map(String::as_str).collect::<Vec<_>>();
+    caps::check_per_value(&state.caps, &refs)?;
+    let mut tx = state.db.begin().await?;
+    super::project_snapshot::lock_project(&mut tx, project).await?;
+    super::project_snapshot::authorize(&mut tx, project, user).await?;
+    caps::check_project_for_insert_on(&state.caps, &mut tx, project, &refs).await?;
+    let delta = values.iter().map(|v| v.len() as i64).sum();
+    caps::check_user_total_on(&state.caps, &mut tx, user, delta).await?;
+    caps::check_and_record_ip_on(&state.caps, &mut tx, ip, delta).await?;
+    let ids = sqlx::query_scalar("INSERT INTO variables(id,value,project_id,tag) SELECT gen_random_uuid(),value,$1,tag FROM UNNEST($2::text[],$3::text[]) AS t(value,tag) RETURNING id")
+        .bind(project).bind(values).bind(tags).fetch_all(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(ids)
+}
+pub async fn delete(state: &AppState, user: Uuid, id: Uuid) -> Result<(), AppError> {
+    let mut tx = state.db.begin().await?;
+    let project: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM variables WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let project = project.ok_or(Errors::NotFound)?;
+    super::project_snapshot::lock_project(&mut tx, project).await?;
+    super::project_snapshot::authorize(&mut tx, project, user).await?;
+    sqlx::query("DELETE FROM variables WHERE id=$1 AND project_id=$2")
+        .bind(id)
+        .bind(project)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -25,24 +25,10 @@ pub async fn remove_users(
     Path(project_id): Path<Uuid>,
     Json(body): Json<RemoveUserBody>,
 ) -> Result<(), AppError> {
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let users_to_remove = body
+    let users = body
         .user_ids
         .iter()
         .map(|user| user.to_uuid())
         .collect::<Result<Vec<Uuid>, _>>()?;
-
-    sqlx::query!(
-        "DELETE FROM user_project_relations WHERE user_id = ANY($1::uuid[]) AND project_id = $2",
-        &users_to_remove,
-        project_id
-    )
-    .execute(&*state.db)
-    .await
-    .context("Failed to remove user from project")?;
-
-    Ok(())
+    crate::helpers::project_snapshot::remove_members(&state, project_id, user_id, &users).await
 }
