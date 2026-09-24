@@ -167,8 +167,20 @@ pub(super) async fn list(
     UserId(user): UserId,
     Query(page): Query<Page>,
 ) -> Result<Json<Vec<Link>>, AppError> {
-    let rows:Vec<LinkRow>=sqlx::query_as("SELECT * FROM friend_links WHERE creator_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3")
-        .bind(user).bind(page.before).bind(page.limit()?).fetch_all(&*state.db).await?;
+    let limit = page.limit()?;
+    let before_time: Option<DateTime<Utc>> = match page.before {
+        Some(id) => Some(
+            sqlx::query_scalar("SELECT created_at FROM friend_links WHERE id=$1 AND creator_id=$2")
+                .bind(id)
+                .bind(user)
+                .fetch_optional(&*state.db)
+                .await?
+                .ok_or_else(not_found)?,
+        ),
+        None => None,
+    };
+    let rows:Vec<LinkRow>=sqlx::query_as("SELECT * FROM friend_links WHERE creator_id=$1 AND ($2::timestamptz IS NULL OR (created_at,id)<($2,$3)) ORDER BY created_at DESC,id DESC LIMIT $4")
+        .bind(user).bind(before_time).bind(page.before).bind(limit).fetch_all(&*state.db).await?;
     let mut result = Vec::new();
     for row in rows {
         result.push(row.public(&state.db).await?);
