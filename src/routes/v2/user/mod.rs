@@ -1,7 +1,8 @@
- use crate::*;
- use crate::extractors::user::UserId;
- use utoipa::ToSchema;
- use uuid::Uuid;
+
+use crate::extractors::user::UserId;
+use crate::*;
+use utoipa::ToSchema;
+use uuid::Uuid;
 
 mod get;
 mod get_many;

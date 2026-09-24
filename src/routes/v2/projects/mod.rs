@@ -1,6 +1,7 @@
- use crate::extractors::user::UserId;
- use crate::*;
- use utoipa::ToSchema;
+
+use crate::extractors::user::UserId;
+use crate::*;
+use utoipa::ToSchema;
 
 mod list;
 mod new;
