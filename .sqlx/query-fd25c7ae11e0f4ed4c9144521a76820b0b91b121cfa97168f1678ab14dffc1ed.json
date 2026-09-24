@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO upload_log (ip, bytes) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Inet",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fd25c7ae11e0f4ed4c9144521a76820b0b91b121cfa97168f1678ab14dffc1ed"
+}

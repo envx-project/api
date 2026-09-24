@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project_invites (\n            project_id,\n            author_id,\n            expires_at,\n            verifier_argon2id,\n            ciphertext\n        )\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING id;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "62055684c67264ed925999a650d22c4f14b844eee0c943cf140fd69fe3405a8c"
+}

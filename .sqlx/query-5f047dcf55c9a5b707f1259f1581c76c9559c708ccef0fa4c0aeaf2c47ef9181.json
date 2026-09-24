@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(bytes)::bigint, 0) AS \"bytes!\"\n           FROM upload_log\n           WHERE ip = $1 AND created_at > now() - interval '24 hours'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bytes!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Inet"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5f047dcf55c9a5b707f1259f1581c76c9559c708ccef0fa4c0aeaf2c47ef9181"
+}

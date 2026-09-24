@@ -2,5 +2,9 @@
   "$schema": "https://schema.up.railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "healthcheckPath": "/.well-known/health-check",
+    "healthcheckTimeout": 120
   }
 }
