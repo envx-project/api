@@ -148,7 +148,14 @@ async fn init_router() -> anyhow::Result<Router> {
         .with_state(state)
         .split_for_parts();
 
-    std::fs::write("./openapi.json", api.to_json()?)?;
+    if let Some(path) = std::env::var_os("ENVX_OPENAPI_OUTPUT") {
+        std::fs::write(&path, api.to_json()?).with_context(|| {
+            format!(
+                "could not export OpenAPI schema to {}",
+                std::path::Path::new(&path).display()
+            )
+        })?;
+    }
 
     let router = router.merge(SwaggerUi::new("/docs").url("/docs/openapi.json", api));
 

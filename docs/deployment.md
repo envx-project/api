@@ -37,3 +37,16 @@ For an old populated database, start the API to upgrade; do not run plain
 `cargo sqlx migrate run`, which intentionally executes the unmodified historical
 migration. Fresh disposable databases can use the standard SQLx CLI for metadata
 generation and test setup.
+
+## OpenAPI export
+
+Normal startup does not write files and supports a read-only container filesystem.
+The schema remains available over HTTP at `/docs/openapi.json`. For SDK generation,
+start a local API against a disposable database with an explicit output path:
+
+```sh
+ENVX_OPENAPI_OUTPUT=./openapi.json cargo run --locked
+```
+
+Alternatively, fetch `/docs/openapi.json` from that running local API. An explicitly
+requested export fails startup if its destination cannot be written.
