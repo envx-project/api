@@ -1,44 +1,55 @@
-//! Extract the client IP, honoring X-Forwarded-For when behind a proxy
-//! (Railway sets this). Falls back to peer SocketAddr.
-
-use std::net::{IpAddr, Ipv4Addr};
-
+//! Forwarding headers are trusted only when explicitly enabled by the operator.
+use crate::error::AppError;
 use axum::{
     extract::{ConnectInfo, FromRequestParts},
-    http::request::Parts,
+    http::{request::Parts, HeaderMap},
 };
-
-use crate::error::AppError;
+use std::net::{IpAddr, Ipv4Addr};
 
 pub struct ClientIp(pub IpAddr);
 
-impl<S> FromRequestParts<S> for ClientIp
-where
-    S: Send + Sync,
-{
-    type Rejection = AppError;
-
-    async fn from_request_parts(parts: &mut Parts, _s: &S) -> Result<Self, Self::Rejection> {
-        if let Some(value) = parts.headers.get("x-forwarded-for") {
-            if let Ok(s) = value.to_str() {
-                // X-Forwarded-For can be comma-separated; the leftmost entry
-                // is the original client.
-                if let Some(first) = s.split(',').next() {
-                    if let Ok(ip) = first.trim().parse::<IpAddr>() {
-                        return Ok(ClientIp(ip));
-                    }
-                }
-            }
-        }
-
-        if let Some(ConnectInfo(addr)) = parts.extensions.get::<ConnectInfo<std::net::SocketAddr>>()
+fn client_ip(headers: &HeaderMap, peer: IpAddr, trust_proxy: bool) -> IpAddr {
+    if trust_proxy && headers.get_all("x-real-ip").iter().count() == 1 {
+        if let Some(ip) = headers
+            .get("x-real-ip")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
         {
-            return Ok(ClientIp(addr.ip()));
+            return ip;
         }
+    }
+    peer
+}
 
-        // Fall back to localhost rather than 500 — IP-based rate limiting
-        // is best-effort; we don't want to break the request entirely if
-        // we can't identify the client.
-        Ok(ClientIp(IpAddr::V4(Ipv4Addr::LOCALHOST)))
+impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+    type Rejection = AppError;
+    async fn from_request_parts(parts: &mut Parts, _s: &S) -> Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<ConnectInfo<std::net::SocketAddr>>()
+            .map(|addr| addr.0.ip())
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let trust_proxy = std::env::var("ENVX_TRUST_PROXY").as_deref() == Ok("true");
+        Ok(ClientIp(client_ip(&parts.headers, peer, trust_proxy)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn forwarding_requires_explicit_trust_and_single_ip() {
+        let peer = "127.0.0.1".parse().unwrap();
+        let remote: IpAddr = "192.0.2.1".parse().unwrap();
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", "203.0.113.1, 192.0.2.1".parse().unwrap());
+        assert_eq!(client_ip(&h, peer, true), peer);
+        h.insert("x-real-ip", "192.0.2.1".parse().unwrap());
+        assert_eq!(client_ip(&h, peer, false), peer);
+        assert_eq!(client_ip(&h, peer, true), remote);
+        h.append("x-real-ip", "203.0.113.1".parse().unwrap());
+        assert_eq!(client_ip(&h, peer, true), peer);
+        h.insert("x-real-ip", "192.0.2.1, 203.0.113.1".parse().unwrap());
+        assert_eq!(client_ip(&h, peer, true), peer);
     }
 }

@@ -43,8 +43,24 @@ fn env_u64(name: &str, default: u64) -> u64 {
 }
 
 fn env_i64(name: &str, default: i64) -> i64 {
-    env::var(name)
-        .ok()
-        .and_then(|v| v.parse().ok())
+    nonnegative_cap(env::var(name).ok().as_deref(), default)
+}
+
+fn nonnegative_cap(value: Option<&str>, default: i64) -> i64 {
+    value
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v >= 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn negative_or_invalid_caps_do_not_disable_limits() {
+        assert_eq!(nonnegative_cap(Some("-1"), 256), 256);
+        assert_eq!(nonnegative_cap(Some("invalid"), 256), 256);
+        assert_eq!(nonnegative_cap(Some("0"), 256), 0);
+        assert_eq!(nonnegative_cap(Some("42"), 256), 42);
+    }
 }
