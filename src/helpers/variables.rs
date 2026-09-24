@@ -108,17 +108,9 @@ pub async fn replace_many(
             "Replacement variables changed or do not belong to this project",
         ));
     }
-    let (count, bytes): (i64,i64) = sqlx::query_as("SELECT count(*), COALESCE(sum(octet_length(value)),0)::bigint FROM variables WHERE project_id=$1")
-        .bind(project).fetch_one(&mut *tx).await?;
+    caps::check_project_for_insert_on(&state.caps, &mut tx, project, &refs).await?;
+    // The transaction already removed replaced rows, so add the full new size.
     let added: i64 = values.iter().map(|v| v.len() as i64).sum();
-    if state.caps.max_variables_per_project > 0
-        && count + values.len() as i64 > state.caps.max_variables_per_project
-    {
-        return Err(bad("Project variable cap exceeded"));
-    }
-    if state.caps.max_project_bytes > 0 && bytes + added > state.caps.max_project_bytes {
-        return Err(bad("Project size cap exceeded"));
-    }
     caps::check_user_total_on(&state.caps, &mut tx, user_id, added).await?;
     caps::check_and_record_ip_on(&state.caps, &mut tx, ip, added).await?;
     let ids: Vec<Uuid> = sqlx::query_scalar("INSERT INTO variables(id,project_id,value) SELECT gen_random_uuid(),$1,value FROM UNNEST($2::text[]) AS t(value) RETURNING id")
@@ -171,6 +163,59 @@ pub async fn delete(state: &AppState, user: Uuid, id: Uuid) -> Result<(), AppErr
 mod tests {
     use super::*;
     use crate::test_support::*;
+    #[sqlx::test]
+    async fn replacement_at_user_cap_and_project_cap_rollback(pool: sqlx::PgPool) {
+        use axum::response::IntoResponse;
+        let owner = user(&pool).await;
+        let project = project(&pool, owner).await;
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO variables(project_id,value) VALUES($1,'original') RETURNING id",
+        )
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let mut state = state(pool.clone());
+        let caps = std::sync::Arc::make_mut(&mut state.caps);
+        caps.max_user_bytes = 8;
+        caps.max_project_bytes = 8;
+        caps.max_variables_per_project = 1;
+        let ids = replace_many(
+            &state,
+            owner,
+            "127.0.0.1".parse().unwrap(),
+            project,
+            vec!["newvalue".into()],
+            vec![id],
+        )
+        .await
+        .ok()
+        .expect("same-size overwrite at full cap");
+        for values in [vec!["too-large".into()], vec!["one".into(), "two".into()]] {
+            let error = replace_many(
+                &state,
+                owner,
+                "127.0.0.1".parse().unwrap(),
+                project,
+                values,
+                ids.clone(),
+            )
+            .await
+            .err()
+            .expect("project cap must reject replacement");
+            assert_eq!(
+                error.into_response().status(),
+                StatusCode::PAYLOAD_TOO_LARGE
+            );
+            let stored: String = sqlx::query_scalar("SELECT value FROM variables WHERE id=$1")
+                .bind(ids[0])
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(stored, "newvalue");
+        }
+    }
+
     #[sqlx::test]
     async fn failed_insert_rolls_back_deleted_values(pool: sqlx::PgPool) {
         let owner = user(&pool).await;

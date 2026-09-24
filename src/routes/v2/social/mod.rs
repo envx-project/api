@@ -43,6 +43,15 @@ async fn identity(pool: &sqlx::PgPool, id: Uuid) -> Result<Identity, AppError> {
             .fetch_optional(pool)
             .await?
             .ok_or_else(not_found)?;
+    // Legacy registrations predate the smaller registration limit. Bound parsing
+    // without rejecting historical keys that still fit the authentication limit.
+    if public_key.len() > 1024 * 1024 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid stored public key",
+        )
+            .into());
+    }
     let key = SignedPublicKey::from_string(&public_key)
         .map_err(|_| {
             AppError::Generic(

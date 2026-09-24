@@ -12,7 +12,6 @@ use sqlx::types::Uuid;
 
 use crate::config::Caps;
 use crate::error::AppError;
-use crate::state::DB;
 use crate::Context as _;
 
 fn too_big(msg: String) -> AppError {
@@ -47,15 +46,6 @@ pub fn check_per_value(caps: &Caps, values: &[&str]) -> Result<(), AppError> {
 
 /// Reject an INSERT that would push the project past either the count
 /// cap or the byte cap.
-pub async fn check_project_for_insert(
-    caps: &Caps,
-    db: &DB,
-    project_id: Uuid,
-    new_values: &[&str],
-) -> Result<(), AppError> {
-    let mut connection = db.acquire().await?;
-    check_project_for_insert_on(caps, &mut connection, project_id, new_values).await
-}
 pub async fn check_project_for_insert_on(
     caps: &Caps,
     connection: &mut sqlx::PgConnection,
@@ -142,16 +132,6 @@ pub async fn check_project_for_update_on(
 /// projects past the per-user cap. `delta_bytes` is the net bytes the
 /// pending write would add (new bytes minus replaced bytes; may be
 /// negative for updates that shrink values).
-pub async fn check_user_total(
-    caps: &Caps,
-    db: &DB,
-    user_id: Uuid,
-    delta_bytes: i64,
-) -> Result<(), AppError> {
-    let mut connection = db.acquire().await?;
-    check_user_total_on(caps, &mut connection, user_id, delta_bytes).await
-}
-
 pub async fn check_user_total_on(
     caps: &Caps,
     connection: &mut sqlx::PgConnection,
@@ -187,16 +167,6 @@ pub async fn check_user_total_on(
 /// Reject a write from an IP that has uploaded more than the per-IP cap
 /// in the last 24 hours, then record this write's byte count in the
 /// upload_log table. Opportunistically prunes rows older than 24h.
-pub async fn check_and_record_ip(
-    caps: &Caps,
-    db: &DB,
-    ip: IpAddr,
-    bytes: i64,
-) -> Result<(), AppError> {
-    let mut connection = db.acquire().await?;
-    check_and_record_ip_on(caps, &mut connection, ip, bytes).await
-}
-
 pub async fn check_and_record_ip_on(
     caps: &Caps,
     connection: &mut sqlx::PgConnection,
