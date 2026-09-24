@@ -1,5 +1,4 @@
 use super::*;
-use pgp::composed::{Deserializable, SignedPublicKey};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct NewUserBody {
@@ -24,13 +23,7 @@ pub async fn new_user_v2(
     State(state): State<AppState>,
     Json(body): Json<NewUserBody>,
 ) -> Result<String, AppError> {
-    // public key validation
-    match SignedPublicKey::from_string(&body.public_key) {
-        Ok(_) => {}
-        Err(_) => {
-            return Err(AppError::Error(Errors::InvalidPublicKey));
-        }
-    }
+    crate::helpers::registration::validate_public_key(&body.public_key)?;
 
     let user = sqlx::query!(
         "INSERT INTO users (username, public_key) VALUES ($1, $2) RETURNING id",

@@ -44,7 +44,8 @@ where
         match auth_header {
             Some(auth_header) => {
                 let auth_header = auth_header.to_str().unwrap_or("");
-                let auth_token = auth_header.trim_start_matches("Bearer ");
+                let auth_token =
+                    bearer_payload(auth_header).ok_or(AppError::Error(Errors::Unauthorized))?;
 
                 let formatted_token = match serde_json::from_str::<Token>(auth_token) {
                     Ok(formatted_token) => formatted_token,
@@ -62,39 +63,10 @@ where
                 let user_id = match validate_challenge(auth_token, state.db).await {
                     Ok(user_id) => user_id,
                     Err(e) => match e {
-                        ChallengeError::InvalidChallenge => {
-                            return Err((StatusCode::BAD_REQUEST, "Invalid challenge").into())
+                        ChallengeError::SqlxError(e) if !matches!(e, sqlx::Error::RowNotFound) => {
+                            return Err(AppError::Error(Errors::SqlxError(e)));
                         }
-                        ChallengeError::InvalidSignature => {
-                            return Err((StatusCode::UNAUTHORIZED, "Invalid signature").into())
-                        }
-                        ChallengeError::TooOld => {
-                            return Err((StatusCode::UNAUTHORIZED, "Too old").into())
-                        }
-                        ChallengeError::TooYoung => {
-                            return Err((StatusCode::UNAUTHORIZED, "Too young").into())
-                        }
-                        ChallengeError::ChronoParseError(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
-                        }
-                        ChallengeError::PgpError(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
-                        }
-                        ChallengeError::SqlxError(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
-                        }
-                        ChallengeError::Utf8Error(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
-                        }
-                        ChallengeError::UuidError(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e.into())))
-                        }
-                        ChallengeError::Generic(e) => {
-                            return Err(AppError::Error(Errors::InternalServerError(e)))
-                        }
-                        ChallengeError::IoError(error) => {
-                            return Err(AppError::Error(Errors::InternalServerError(error.into())))
-                        }
+                        _ => return Err((StatusCode::UNAUTHORIZED, "Invalid credentials").into()),
                     },
                 };
 
@@ -105,6 +77,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 enum ChallengeError {
     InvalidChallenge,
     InvalidSignature,
@@ -176,10 +149,10 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
     // check to make sure its not more than 10 minutes old
     let diff = Utc::now().signed_duration_since(challenge);
     if diff.num_seconds() > 10 * 60 {
-        return Err(ChallengeError::TooOld)?;
+        return Err(ChallengeError::TooOld);
     }
     if diff.num_seconds() < 0 {
-        return Err(ChallengeError::TooYoung)?;
+        return Err(ChallengeError::TooYoung);
     }
 
     let user_pubkey = sqlx::query!("SELECT public_key FROM users WHERE id = $1", user_id)
@@ -192,7 +165,7 @@ async fn validate_challenge(challenge: &str, db: DB) -> Result<Uuid, ChallengeEr
         .is_ok();
 
     if !verified {
-        return Err(ChallengeError::InvalidSignature)?;
+        return Err(ChallengeError::InvalidSignature);
     }
 
     Ok(user_id)
@@ -203,5 +176,62 @@ impl std::fmt::Display for UserId {
         f.write_str(&self.0.to_string())?;
 
         Ok(())
+    }
+}
+
+// Older released clients accidentally prefixed Bearer twice. Keep that exact
+// compatibility case, but require an authentication scheme and reject repeats.
+fn bearer_payload(value: &str) -> Option<&str> {
+    let payload = value.strip_prefix("Bearer ")?;
+    Some(payload.strip_prefix("Bearer ").unwrap_or(payload))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn malformed_credentials_return_unauthorized_without_database_access() {
+        use axum::{http::Request, response::IntoResponse};
+        use std::sync::Arc;
+        let state = AppState {
+            db: Arc::new(
+                sqlx::postgres::PgPoolOptions::new()
+                    .connect_lazy("postgres://invalid/unused")
+                    .unwrap(),
+            ),
+            caps: Arc::new(crate::config::Caps::from_env()),
+        };
+        for value in [
+            "{}".to_owned(),
+            "Bearer not-json".to_owned(),
+            r#"Bearer {"token":"not-a-uuid","signature":"not-pgp"}"#.to_owned(),
+            format!(
+                r#"Bearer {{"token":"{}","signature":"not-pgp"}}"#,
+                Uuid::new_v4()
+            ),
+        ] {
+            let (mut parts, _) = Request::builder()
+                .header(header::AUTHORIZATION, value)
+                .body(())
+                .unwrap()
+                .into_parts();
+            let result = UserId::from_request_parts(&mut parts, &state).await;
+            match result {
+                Err(error) => assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED),
+                Ok(_) => panic!("malformed credentials accepted"),
+            }
+        }
+    }
+
+    #[test]
+    fn bearer_scheme_required_with_legacy_compatibility() {
+        assert_eq!(bearer_payload("Bearer {}"), Some("{}"));
+        assert_eq!(bearer_payload("Bearer Bearer {}"), Some("{}"));
+        assert_eq!(bearer_payload("{}"), None);
+        assert_eq!(bearer_payload("Basic {}"), None);
+        assert!(
+            serde_json::from_str::<Token>(bearer_payload("Bearer Bearer Bearer {}").unwrap())
+                .is_err()
+        );
     }
 }
