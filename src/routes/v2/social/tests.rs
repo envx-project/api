@@ -593,3 +593,54 @@ async fn key_snapshots_are_canonical_accounted_and_erased(pool: sqlx::PgPool) {
     assert!(sender.is_empty());
     assert!(recipient.is_empty());
 }
+
+#[sqlx::test]
+async fn legacy_key_with_invalid_self_signature_cannot_join_social_graph(pool: sqlx::PgPool) {
+    let (invalid, key) = user(&pool).await;
+    let (valid, other_key) = user(&pool).await;
+    let mut public = SignedPublicKey::from(key);
+    public.details = SignedPublicKey::from(other_key).details;
+    let armor = public.to_armored_string(ArmorOptions::default()).unwrap();
+    let parsed = SignedPublicKey::from_string(&armor).unwrap().0;
+    assert!(
+        parsed.verify().is_err(),
+        "fixture must parse but fail self-signature validation"
+    );
+    sqlx::query("UPDATE users SET public_key=$1 WHERE id=$2")
+        .bind(armor)
+        .bind(invalid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(identity(&pool, invalid).await.is_err());
+    for (creator, target) in [(invalid, None), (valid, Some(invalid))] {
+        assert!(links::create(
+            State(state(pool.clone())),
+            UserId(creator),
+            Json(links::CreateLink {
+                label: "amber-otter".into(),
+                target_id: target,
+                expires_at: None,
+            })
+        )
+        .await
+        .is_err());
+    }
+    let invitation = link(&pool, valid, None).await;
+    assert!(links::redeem(
+        State(state(pool.clone())),
+        UserId(invalid),
+        Json(links::Redeem {
+            id: invitation.link.id,
+            token: invitation.token,
+            receipt: "untrusted".into(),
+        })
+    )
+    .await
+    .is_err());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM friendships")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
