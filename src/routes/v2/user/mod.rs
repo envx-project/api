@@ -1,4 +1,3 @@
-
 use crate::extractors::user::UserId;
 use crate::*;
 use utoipa::ToSchema;
