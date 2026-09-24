@@ -138,6 +138,12 @@ pub(super) async fn create(
     if expires <= now || expires > now + chrono::Duration::days(30) {
         return Err(bad("Link expiry must be in the next 30 days"));
     }
+    // Historical registrations only parsed keys; reject unusable identities
+    // before publishing an invitation that clients cannot safely accept.
+    identity(&state.db, user).await?;
+    if let Some(target) = body.target_id {
+        identity(&state.db, target).await?;
+    }
     let mut random = [0u8; 32];
     rand::rng().fill_bytes(&mut random);
     let token = hex::encode(random);

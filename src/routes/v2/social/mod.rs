@@ -60,6 +60,12 @@ async fn identity(pool: &sqlx::PgPool, id: Uuid) -> Result<Identity, AppError> {
             )
         })?
         .0;
+    key.verify().map_err(|_| {
+        AppError::Generic(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid stored public key".into(),
+        )
+    })?;
     Ok(Identity {
         id,
         username,
