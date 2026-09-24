@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE variables AS v SET value = u.value FROM UNNEST($1::uuid[], $2::text[]) AS u(id, value) WHERE v.id = u.id RETURNING v.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "efe3e535d4030b7437a955bfccb7e09e733dede0607c05eed349f2cc7c75a77a"
+}

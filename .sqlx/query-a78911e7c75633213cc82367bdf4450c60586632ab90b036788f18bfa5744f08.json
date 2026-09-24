@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(octet_length(v.value))::bigint, 0) AS \"bytes!\"\n           FROM variables v\n           JOIN user_project_relations upr ON v.project_id = upr.project_id\n           WHERE upr.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bytes!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a78911e7c75633213cc82367bdf4450c60586632ab90b036788f18bfa5744f08"
+}

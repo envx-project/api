@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_project_relations WHERE user_id = ANY($1::uuid[]) AND project_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08eae3c0fe8d3216914c6222baf2a0166590fceec30a5fcd7ed31eef02ac2092"
+}

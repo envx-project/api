@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: envx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/envx_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres,rustls
+      - run: cargo sqlx migrate run
+      - run: cargo fmt -- --check
+      - run: cargo sqlx prepare --check -- --all-targets
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets
+      - name: Verify build without a database connection
+        run: env -u DATABASE_URL SQLX_OFFLINE=true cargo check --locked --all-targets

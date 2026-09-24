@@ -1,2 +1,7 @@
 target/
-Dockerfile
+.git/
+.env
+.env.*
+*.env
+.pg/
+.claude/

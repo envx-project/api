@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n              COALESCE(sum(CASE WHEN id = ANY($2::uuid[])\n                                THEN octet_length(value) ELSE 0 END)::bigint, 0) AS \"replaced!\",\n              COALESCE(sum(octet_length(value))::bigint, 0) AS \"total!\"\n           FROM variables WHERE project_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "replaced!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "total!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e01cf6176b1d89cd6bdf6f6f97fec2dc395ab918830337ce33953d8727240f81"
+}

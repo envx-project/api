@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM upload_log WHERE created_at < now() - interval '24 hours'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "1c2be9b90755c1d4865b8b713b21e0a430852df4b62768892c16fcd865bc91cf"
+}
