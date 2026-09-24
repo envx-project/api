@@ -51,23 +51,28 @@ is an `Identity`. Timestamps are RFC3339.
 - `GET /messages`: both incoming and outgoing visible messages, metadata only.
 - `GET /messages/{id}`: participant-only metadata plus ciphertext.
 - `DELETE /messages/{id}`: delete the caller's mailbox copy, 204. Once both copies
-  are deleted, ciphertext is erased; minimal retry state remains.
+  are deleted, ciphertext and public-key snapshots are erased; minimal retry state remains.
 
 Message fields: `{id, sender_id, recipient_id, created_at, expires_at,
 sender_public_key, recipient_public_key, ciphertext}`. Send and list responses
-set ciphertext to null. Keys are snapshotted at send time. Never trust a server
+set ciphertext to null and public-key fields to empty strings. Full keys are
+returned only by the message detail endpoint. Keys are verified and canonically
+armored at send time, discarding arbitrary armor headers. Legacy stored keys
+larger than 1 MiB and canonical keys larger than 128 KiB are rejected when
+sending; this intentionally bounds previously uncapped registrations. Never trust a server
 snapshot in place of a locally pinned fingerprint.
 
 Expiry makes both copies inaccessible immediately. A bounded cleanup during
-subsequent sends erases up to 1,000 expired ciphertexts. This is request-driven
+subsequent sends erases up to 1,000 expired ciphertexts and their key snapshots. This is request-driven
 cleanup, not a promise of physical erasure at the expiry instant; backups may
 also retain ciphertext. Database maintenance can clear the remaining expired
 ciphertext independently. The message ID and digest remain tombstones so retries
 cannot resurrect messages.
 
-All three lists accept `limit` (1–100, default 50) and `before` (UUID). They sort
-by UUID descending; pass the last item's ID as the next cursor (friend user ID
-for the friends list). Ordering is stable but deliberately not chronological.
+All three lists accept `limit` (1–100, default 50) and `before` (UUID). Messages and links sort
+newest first, with UUID descending breaking creation-time ties. Pass the last
+item's ID as the next cursor; cursors must belong to the caller. The friends list
+sorts by friend UUID descending and uses the friend user ID as its cursor.
 
 ## Limits and concurrency
 
@@ -75,11 +80,13 @@ for the friends list). Ordering is stable but deliberately not chronological.
 - 1,000 preview/redemption attempts per account per UTC day, including failures.
 - 1,000 mutual friends per account.
 - 128 KiB ciphertext per message; 1,000 sends per account per UTC day.
-- 1,000 live messages and 20 MiB ciphertext per participant's mailbox.
+- 1,000 live messages and 20 MiB of ciphertext plus both canonical key snapshots
+  per participant's mailbox.
 
 Daily counters are independent of message deletion. User rows are locked in UUID
 order before friendship mutations or quota-sensitive writes. PostgreSQL tests
 cover claim races, retry recovery, target/signature/token rejection, revocation,
-expiry, authorization, deletion, pagination, send-rate and mailbox-capacity races.
+expiry, authorization, deletion, pagination, send-rate and mailbox-capacity races, creation-time pagination ties, unrelated cursors, and
+legacy padded-key canonicalization/accounting/cleanup.
 Run them only against a disposable PostgreSQL instance; `sqlx::test` creates
 isolated test databases and applies migrations automatically.

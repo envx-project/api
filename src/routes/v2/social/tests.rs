@@ -401,3 +401,195 @@ async fn mailbox_capacity_serializes_and_precise_expiry_retries(pool: sqlx::PgPo
         .unwrap();
     assert_eq!(count, 1000);
 }
+
+#[sqlx::test]
+async fn histories_are_chronological_with_owned_cursors_and_ties(pool: sqlx::PgPool) {
+    let (a, _) = user(&pool).await;
+    let (b, bk) = user(&pool).await;
+    let (outsider, _) = user(&pool).await;
+    befriend(&pool, a, b, &bk).await;
+    let ids = [Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)];
+    for id in ids {
+        let _ = ok(messages::send(State(state(pool.clone())), UserId(a), Json(body(id, b))).await);
+    }
+    sqlx::query("UPDATE secret_messages SET created_at='2026-01-01T00:00:00Z'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE secret_messages SET created_at='2026-01-02T00:00:00Z' WHERE id=$1")
+        .bind(ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut cursor = None;
+    for expected in [ids[0], ids[2], ids[1]] {
+        let page = ok(messages::list(
+            State(state(pool.clone())),
+            UserId(b),
+            Query(Page {
+                before: cursor,
+                limit: Some(1),
+            }),
+        )
+        .await)
+        .0;
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].id, expected);
+        cursor = Some(expected);
+    }
+    assert!(messages::list(
+        State(state(pool.clone())),
+        UserId(outsider),
+        Query(Page {
+            before: Some(ids[0]),
+            limit: Some(1)
+        })
+    )
+    .await
+    .is_err());
+    let mut link_ids = Vec::new();
+    for _ in 0..3 {
+        link_ids.push(link(&pool, a, None).await.link.id);
+    }
+    link_ids.sort();
+    sqlx::query(
+        "UPDATE friend_links SET created_at='2026-01-01T00:00:00Z' WHERE redeemed_by IS NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE friend_links SET created_at='2026-01-02T00:00:00Z' WHERE id=$1")
+        .bind(link_ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Exclude the befriend fixture above from the first page.
+    sqlx::query(
+        "UPDATE friend_links SET created_at='2025-01-01T00:00:00Z' WHERE redeemed_by IS NOT NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut cursor = None;
+    for expected in [link_ids[0], link_ids[2], link_ids[1]] {
+        let page = ok(links::list(
+            State(state(pool.clone())),
+            UserId(a),
+            Query(Page {
+                before: cursor,
+                limit: Some(1),
+            }),
+        )
+        .await)
+        .0;
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].id, expected);
+        cursor = Some(expected);
+    }
+    assert!(links::list(
+        State(state(pool.clone())),
+        UserId(b),
+        Query(Page {
+            before: Some(link_ids[0]),
+            limit: Some(1)
+        })
+    )
+    .await
+    .is_err());
+}
+
+#[sqlx::test]
+async fn key_snapshots_are_canonical_accounted_and_erased(pool: sqlx::PgPool) {
+    let (a, _) = user(&pool).await;
+    let (b, bk) = user(&pool).await;
+    befriend(&pool, a, b, &bk).await;
+    let original: String = sqlx::query_scalar("SELECT public_key FROM users WHERE id=$1")
+        .bind(a)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let padded = original.replacen(
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\n",
+        &format!(
+            "-----BEGIN PGP PUBLIC KEY BLOCK-----\nComment: {}\n",
+            "X".repeat(64 * 1024)
+        ),
+        1,
+    );
+    assert!(padded.len() > original.len() + 60 * 1024);
+    sqlx::query("UPDATE users SET public_key=$2 WHERE id=$1")
+        .bind(a)
+        .bind(padded)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = Uuid::new_v4();
+    let sent = ok(messages::send(State(state(pool.clone())), UserId(a), Json(body(id, b))).await).0;
+    assert!(sent.sender_public_key.is_empty());
+    assert!(sent.recipient_public_key.is_empty());
+    let got = ok(messages::get(State(state(pool.clone())), UserId(b), Path(id)).await).0;
+    assert_eq!(got.sender_public_key, original);
+    let listed = ok(messages::list(
+        State(state(pool.clone())),
+        UserId(b),
+        Query(Page::default()),
+    )
+    .await)
+    .0;
+    assert!(listed[0].sender_public_key.is_empty());
+    assert!(listed[0].recipient_public_key.is_empty());
+    // Existing snapshot bytes count even though ciphertext itself is tiny.
+    sqlx::query("UPDATE secret_messages SET sender_public_key=repeat('k',20971520) WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(messages::send(
+        State(state(pool.clone())),
+        UserId(a),
+        Json(body(Uuid::new_v4(), b))
+    )
+    .await
+    .is_err());
+    ok(messages::delete(State(state(pool.clone())), UserId(a), Path(id)).await);
+    ok(messages::delete(State(state(pool.clone())), UserId(b), Path(id)).await);
+    let (ciphertext, sender, recipient): (Option<String>, String, String) = sqlx::query_as(
+        "SELECT ciphertext,sender_public_key,recipient_public_key FROM secret_messages WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(ciphertext.is_none());
+    assert!(sender.is_empty());
+    assert!(recipient.is_empty());
+    let _ = ok(messages::send(State(state(pool.clone())), UserId(a), Json(body(id, b))).await);
+    let expired = Uuid::new_v4();
+    let _ = ok(messages::send(
+        State(state(pool.clone())),
+        UserId(a),
+        Json(body(expired, b)),
+    )
+    .await);
+    sqlx::query("UPDATE secret_messages SET expires_at=now()-interval '1 hour' WHERE id=$1")
+        .bind(expired)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let _ = ok(messages::send(
+        State(state(pool.clone())),
+        UserId(a),
+        Json(body(Uuid::new_v4(), b)),
+    )
+    .await);
+    let (ciphertext, sender, recipient): (Option<String>, String, String) = sqlx::query_as(
+        "SELECT ciphertext,sender_public_key,recipient_public_key FROM secret_messages WHERE id=$1",
+    )
+    .bind(expired)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(ciphertext.is_none());
+    assert!(sender.is_empty());
+    assert!(recipient.is_empty());
+}
