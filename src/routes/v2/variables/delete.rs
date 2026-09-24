@@ -18,22 +18,5 @@ pub async fn delete(
     Path(variable_id): Path<Uuid>,
     UserId(user_id): UserId,
 ) -> Result<(), AppError> {
-    let variable = sqlx::query!(
-        "SELECT id, value, project_id FROM variables WHERE id = $1",
-        variable_id
-    )
-    .fetch_one(&*state.db)
-    .await
-    .context("Failed to get variable")?;
-
-    if !user_in_project(user_id, variable.project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    sqlx::query!("DELETE FROM variables WHERE id = $1", variable_id)
-        .execute(&*state.db)
-        .await
-        .context("Failed to delete variable")?;
-
-    Ok(())
+    crate::helpers::variables::delete(&state, user_id, variable_id).await
 }

@@ -53,6 +53,15 @@ pub async fn check_project_for_insert(
     project_id: Uuid,
     new_values: &[&str],
 ) -> Result<(), AppError> {
+    let mut connection = db.acquire().await?;
+    check_project_for_insert_on(caps, &mut connection, project_id, new_values).await
+}
+pub async fn check_project_for_insert_on(
+    caps: &Caps,
+    connection: &mut sqlx::PgConnection,
+    project_id: Uuid,
+    new_values: &[&str],
+) -> Result<(), AppError> {
     let count_cap = caps.max_variables_per_project;
     let bytes_cap = caps.max_project_bytes;
     if count_cap == 0 && bytes_cap == 0 {
@@ -66,7 +75,7 @@ pub async fn check_project_for_insert(
            FROM variables WHERE project_id = $1"#,
         project_id
     )
-    .fetch_one(db.as_ref())
+    .fetch_one(&mut *connection)
     .await
     .context("Failed to fetch project size")?;
 

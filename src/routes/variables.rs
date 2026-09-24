@@ -1,5 +1,4 @@
 use crate::extractors::client_ip::ClientIp;
-use crate::helpers::caps;
 use crate::structs::Variable;
 use crate::traits::to_uuid::ToUuid;
 use crate::*;
@@ -25,31 +24,17 @@ pub async fn new_variable(
     ClientIp(ip): ClientIp,
     Json(body): Json<NewVariableBody>,
 ) -> Result<Json<NewVariableReturnType>, AppError> {
-    let project_id = body.project_id.to_uuid()?;
-
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let values = [body.value.as_str()];
-    caps::check_per_value(&state.caps, &values)?;
-    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
-    let delta = body.value.len() as i64;
-    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
-    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
-
-    let variable = sqlx::query!(
-        "INSERT INTO variables (value, project_id, tag) VALUES ($1, $2, $3) RETURNING id",
-        body.value,
-        project_id,
-        body.tag.unwrap_or_default()
+    let ids = crate::helpers::variables::insert_many(
+        &state,
+        user_id,
+        ip,
+        body.project_id.to_uuid()?,
+        vec![body.value],
+        vec![body.tag.unwrap_or_default()],
     )
-    .fetch_one(&*state.db)
-    .await
-    .context("Failed to insert variable")?;
-
+    .await?;
     Ok(Json(NewVariableReturnType {
-        id: variable.id.to_string(),
+        id: ids[0].to_string(),
     }))
 }
 
@@ -130,24 +115,7 @@ pub async fn delete_variable(
     Path(variable_id): Path<Uuid>,
     UserId(user_id): UserId,
 ) -> Result<(), AppError> {
-    let variable = sqlx::query!(
-        "SELECT id, value, project_id FROM variables WHERE id = $1",
-        variable_id
-    )
-    .fetch_one(&*state.db)
-    .await
-    .context("Failed to get variable")?;
-
-    if !user_in_project(user_id, variable.project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    sqlx::query!("DELETE FROM variables WHERE id = $1", variable_id)
-        .execute(&*state.db)
-        .await
-        .context("Failed to delete variable")?;
-
-    Ok(())
+    crate::helpers::variables::delete(&state, user_id, variable_id).await
 }
 
 #[derive(Serialize, Deserialize)]
@@ -173,56 +141,25 @@ pub async fn set_many_variables_v2(
     ClientIp(ip): ClientIp,
     Json(body): Json<V2SetManyBody>,
 ) -> Result<Json<Vec<V2SetManyReturnType>>, AppError> {
-    let project_id = body.project_id.to_uuid()?;
-
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let values: Vec<&str> = body.variables.iter().map(|v| v.value.as_str()).collect();
-    caps::check_per_value(&state.caps, &values)?;
-    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
-    let delta: i64 = values.iter().map(|v| v.len() as i64).sum();
-    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
-    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
-
-    let variables = sqlx::query!(
-        "INSERT INTO variables (value, project_id, tag) SELECT * FROM UNNEST($1::text[], $2::uuid[], $3::text[]) RETURNING id",
-        &body.variables.iter().map(|v| v.value.clone()).collect::<Vec<String>>(),
-        &vec![project_id; body.variables.len()],
-        // &body.variables.iter().map(|v| v.tag.clone()).collect::<Vec<Option<String>>>()
-        &body.variables.iter().map(|v| v.tag.clone().unwrap_or_default()).collect::<Vec<String>>()
+    let (values, tags) = body
+        .variables
+        .into_iter()
+        .map(|v| (v.value, v.tag.unwrap_or_default()))
+        .unzip();
+    let ids = crate::helpers::variables::insert_many(
+        &state,
+        user_id,
+        ip,
+        body.project_id.to_uuid()?,
+        values,
+        tags,
     )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to insert variables")?;
-
+    .await?;
     Ok(Json(
-        variables
-            .iter()
-            .map(|v| V2SetManyReturnType {
-                id: v.id.to_string(),
-            })
-            .collect::<Vec<V2SetManyReturnType>>(),
+        ids.into_iter()
+            .map(|id| V2SetManyReturnType { id: id.to_string() })
+            .collect(),
     ))
-
-    // let variables = sqlx::query!(
-    //     "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
-    //     &body.variables,
-    //     &vec![project_id; body.variables.len()]
-    // )
-    // .fetch_all(&*state.db)
-    // .await
-    // .context("Failed to insert variables")?;
-    //
-    // Ok(Json(
-    //     variables
-    //         .iter()
-    //         .map(|v| SetManyReturnType {
-    //             id: v.id.to_string(),
-    //         })
-    //         .collect::<Vec<SetManyReturnType>>(),
-    // ))
 }
 
 #[cfg(test)]
