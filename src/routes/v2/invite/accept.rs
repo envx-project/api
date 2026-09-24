@@ -64,6 +64,18 @@ pub async fn accept_invite(
         ));
     }
 
+    let mut tx = state.db.begin().await?;
+    // An invitation cannot outlive its author's authority to grant access.
+    let author_membership: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM user_project_relations WHERE user_id=$1 AND project_id=$2 FOR SHARE",
+    )
+    .bind(invite.author_id)
+    .bind(invite.project_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if author_membership.is_none() {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
     let id = sqlx::query!(
         "UPDATE project_invites 
         SET invited_id = $1,
@@ -77,9 +89,13 @@ pub async fn accept_invite(
         user_id,
         body.code
     )
-    .fetch_optional(&*state.db)
+    .fetch_optional(&mut *tx)
     .await
     .context("Failed to update invite")?;
+
+    if id.is_none() {
+        return Err(AppError::Error(Errors::Unauthorized));
+    }
 
     sqlx::query!(
         "INSERT INTO user_project_relations (user_id, project_id)
@@ -88,17 +104,122 @@ pub async fn accept_invite(
         &user_id,
         &invite.project_id,
     )
-    .execute(&*state.db)
+    .execute(&mut *tx)
     .await
     .context("Failed to insert user project relations")?;
 
-    if id.is_none() {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
+    tx.commit().await?;
 
     Ok(Json(AcceptInviteReturnType {
         ciphertext: invite.ciphertext.unwrap(),
         invite_id: invite.id.to_string(),
         project_id: invite.project_id.to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::*;
+    use argon2::{
+        password_hash::{rand_core::OsRng, SaltString},
+        PasswordHasher,
+    };
+    #[sqlx::test]
+    async fn expired_invite_does_not_grant_membership(pool: sqlx::PgPool) {
+        let owner = user(&pool).await;
+        let guest = user(&pool).await;
+        let project = project(&pool, owner).await;
+        let verifier = Uuid::new_v4();
+        let hash = Argon2::default()
+            .hash_password(verifier.as_bytes(), &SaltString::generate(&mut OsRng))
+            .unwrap()
+            .to_string();
+        let code=sqlx::query_scalar("INSERT INTO project_invites(project_id,author_id,expires_at,verifier_argon2id,ciphertext) VALUES ($1,$2,now()-interval '1 hour',$3,'secret') RETURNING id").bind(project).bind(owner).bind(hash).fetch_one(&pool).await.unwrap();
+        assert!(accept_invite(
+            State(state(pool.clone())),
+            UserId(guest),
+            Json(AcceptInviteBody { code, verifier })
+        )
+        .await
+        .is_err());
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_project_relations WHERE user_id=$1 AND project_id=$2",
+        )
+        .bind(guest)
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 0);
+    }
+    #[sqlx::test]
+    async fn removed_author_cannot_grant_membership(pool: sqlx::PgPool) {
+        let owner = user(&pool).await;
+        let guest = user(&pool).await;
+        let project = project(&pool, owner).await;
+        let verifier = Uuid::new_v4();
+        let hash = Argon2::default()
+            .hash_password(verifier.as_bytes(), &SaltString::generate(&mut OsRng))
+            .unwrap()
+            .to_string();
+        let code=sqlx::query_scalar("INSERT INTO project_invites(project_id,author_id,expires_at,verifier_argon2id,ciphertext) VALUES ($1,$2,now()+interval '1 hour',$3,'secret') RETURNING id").bind(project).bind(owner).bind(hash).fetch_one(&pool).await.unwrap();
+        sqlx::query("DELETE FROM user_project_relations WHERE user_id=$1 AND project_id=$2")
+            .bind(owner)
+            .bind(project)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(accept_invite(
+            State(state(pool.clone())),
+            UserId(guest),
+            Json(AcceptInviteBody { code, verifier })
+        )
+        .await
+        .is_err());
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_project_relations WHERE user_id=$1 AND project_id=$2",
+        )
+        .bind(guest)
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 0);
+    }
+    #[sqlx::test]
+    async fn concurrent_redemption_has_one_winner(pool: sqlx::PgPool) {
+        let owner = user(&pool).await;
+        let a = user(&pool).await;
+        let b = user(&pool).await;
+        let project = project(&pool, owner).await;
+        let verifier = Uuid::new_v4();
+        let hash = Argon2::default()
+            .hash_password(verifier.as_bytes(), &SaltString::generate(&mut OsRng))
+            .unwrap()
+            .to_string();
+        let code=sqlx::query_scalar("INSERT INTO project_invites(project_id,author_id,expires_at,verifier_argon2id,ciphertext) VALUES ($1,$2,now()+interval '1 hour',$3,'secret') RETURNING id").bind(project).bind(owner).bind(hash).fetch_one(&pool).await.unwrap();
+        let (ra, rb) = tokio::join!(
+            accept_invite(
+                State(state(pool.clone())),
+                UserId(a),
+                Json(AcceptInviteBody { code, verifier })
+            ),
+            accept_invite(
+                State(state(pool.clone())),
+                UserId(b),
+                Json(AcceptInviteBody { code, verifier })
+            )
+        );
+        assert_eq!(usize::from(ra.is_ok()) + usize::from(rb.is_ok()), 1);
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_project_relations WHERE project_id=$1 AND user_id<>$2",
+        )
+        .bind(project)
+        .bind(owner)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    }
 }

@@ -1,8 +1,5 @@
-use std::collections::HashSet;
-
 use crate::extractors::client_ip::ClientIp;
 use crate::helpers::caps;
-use crate::helpers::caps::check_update_caps_grouped;
 use crate::structs::Variable;
 use crate::traits::to_uuid::ToUuid;
 use crate::*;
@@ -60,6 +57,8 @@ pub async fn new_variable(
 pub struct SetManyBody {
     project_id: String,
     variables: Vec<String>,
+    #[serde(default)]
+    replace_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -73,35 +72,19 @@ pub async fn set_many_variables(
     ClientIp(ip): ClientIp,
     Json(body): Json<SetManyBody>,
 ) -> Result<Json<Vec<SetManyReturnType>>, AppError> {
-    let project_id = body.project_id.to_uuid()?;
-
-    if !user_in_project(user_id, project_id, &state.db).await? {
-        return Err(AppError::Error(Errors::Unauthorized));
-    }
-
-    let values: Vec<&str> = body.variables.iter().map(String::as_str).collect();
-    caps::check_per_value(&state.caps, &values)?;
-    caps::check_project_for_insert(&state.caps, &state.db, project_id, &values).await?;
-    let delta: i64 = values.iter().map(|v| v.len() as i64).sum();
-    caps::check_user_total(&state.caps, &state.db, user_id, delta).await?;
-    caps::check_and_record_ip(&state.caps, &state.db, ip, delta).await?;
-
-    let variables = sqlx::query!(
-        "INSERT INTO variables (value, project_id) SELECT * FROM UNNEST($1::text[], $2::uuid[]) RETURNING id",
-        &body.variables,
-        &vec![project_id; body.variables.len()]
+    let ids = crate::helpers::variables::replace_many(
+        &state,
+        user_id,
+        ip,
+        body.project_id.to_uuid()?,
+        body.variables,
+        body.replace_ids,
     )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to insert variables")?;
-
+    .await?;
     Ok(Json(
-        variables
-            .iter()
-            .map(|v| SetManyReturnType {
-                id: v.id.to_string(),
-            })
-            .collect::<Vec<SetManyReturnType>>(),
+        ids.into_iter()
+            .map(|id| SetManyReturnType { id: id.to_string() })
+            .collect(),
     ))
 }
 
@@ -137,58 +120,8 @@ pub async fn update_many_variables(
     ClientIp(ip): ClientIp,
     Json(body): Json<UpdateManyBody>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    let projects = body
-        .variables
-        .iter()
-        .map(|v| v.project_id.as_str())
-        .collect::<HashSet<&str>>()
-        .iter()
-        .map(|s| s.to_string().to_uuid().unwrap())
-        .collect::<Vec<Uuid>>();
-
-    let projects = sqlx::query!(
-        "SELECT id FROM projects WHERE id = ANY($1::uuid[])",
-        &projects
-    )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to get projects")?;
-
-    // make sure the user is in all the projects
-    for project in projects {
-        if !user_in_project(user_id, project.id, &state.db).await? {
-            return Err(AppError::Error(Errors::Unauthorized));
-        }
-    }
-
-    let all_values: Vec<&str> = body.variables.iter().map(|v| v.value.as_str()).collect();
-    caps::check_per_value(&state.caps, &all_values)?;
-    check_update_caps_grouped(
-        &state,
-        user_id,
-        ip,
-        body.variables
-            .iter()
-            .map(|v| (v.project_id.as_str(), v.id.as_str(), v.value.as_str()))
-            .collect::<Vec<_>>(),
-    )
-    .await?;
-
-    // use UNNEST to update all the variables at once
-    let variables = sqlx::query!(
-        "UPDATE variables AS v SET value = u.value FROM UNNEST($1::uuid[], $2::text[]) AS u(id, value) WHERE v.id = u.id RETURNING v.id",
-        &body.variables.iter().map(|v| v.id.to_uuid().unwrap()).collect::<Vec<Uuid>>(),
-        &body.variables.iter().map(|v| v.value.clone()).collect::<Vec<String>>()
-    )
-    .fetch_all(&*state.db)
-    .await
-    .context("Failed to update variables")?;
-
     Ok(Json(
-        variables
-            .iter()
-            .map(|v| v.id.to_string())
-            .collect::<Vec<String>>(),
+        crate::helpers::variables::update_many(&state, user_id, ip, body.variables).await?,
     ))
 }
 
@@ -290,4 +223,69 @@ pub async fn set_many_variables_v2(
     //         })
     //         .collect::<Vec<SetManyReturnType>>(),
     // ))
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    use crate::test_support::*;
+    #[sqlx::test]
+    async fn mismatched_project_cannot_overwrite_variable(pool: sqlx::PgPool) {
+        let attacker = user(&pool).await;
+        let victim = user(&pool).await;
+        let own = project(&pool, attacker).await;
+        let other = project(&pool, victim).await;
+        let id: Uuid=sqlx::query_scalar("INSERT INTO variables(id,project_id,value) VALUES (gen_random_uuid(),$1,'original') RETURNING id").bind(other).fetch_one(&pool).await.unwrap();
+        let result = update_many_variables(
+            State(state(pool.clone())),
+            UserId(attacker),
+            ClientIp("127.0.0.1".parse().unwrap()),
+            Json(UpdateManyBody {
+                variables: vec![Variable {
+                    id: id.to_string(),
+                    project_id: own.to_string(),
+                    value: "tampered".into(),
+                }],
+            }),
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "must reject a variable belonging to another project"
+        );
+        let value: String = sqlx::query_scalar("SELECT value FROM variables WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(value, "original");
+    }
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    use super::*;
+    use crate::test_support::*;
+    #[sqlx::test]
+    async fn replacement_removes_old_values_only_on_success(pool: sqlx::PgPool) {
+        let owner = user(&pool).await;
+        let project = project(&pool, owner).await;
+        let id: Uuid=sqlx::query_scalar("INSERT INTO variables(id,project_id,value) VALUES (gen_random_uuid(),$1,'original') RETURNING id").bind(project).fetch_one(&pool).await.unwrap();
+        let body=serde_json::from_value(serde_json::json!({"project_id":project,"variables":["replacement"],"replace_ids":[id]})).unwrap();
+        assert!(set_many_variables(
+            State(state(pool.clone())),
+            UserId(owner),
+            ClientIp("127.0.0.1".parse().unwrap()),
+            Json(body)
+        )
+        .await
+        .is_ok());
+        let values: Vec<String> =
+            sqlx::query_scalar("SELECT value FROM variables WHERE project_id=$1")
+                .bind(project)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(values, vec!["replacement"]);
+    }
 }

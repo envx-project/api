@@ -110,6 +110,10 @@ async fn init_router() -> anyhow::Result<Router> {
         )
         .route("/variables/set-many", post(variables::set_many_variables))
         .route(
+            "/variables/replace-many",
+            post(variables::set_many_variables),
+        )
+        .route(
             "/variables/set-many/v2",
             post(variables::set_many_variables_v2),
         )
@@ -150,3 +154,6 @@ async fn init_router() -> anyhow::Result<Router> {
 
     Ok(router)
 }
+
+#[cfg(test)]
+mod test_support;

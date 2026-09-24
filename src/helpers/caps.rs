@@ -4,7 +4,6 @@
 //! the absolute upper bound the user can sustain is bounded by these
 //! checks even if a single batch slips through.
 
-use std::collections::HashMap;
 use std::net::IpAddr;
 
 use axum::http::StatusCode;
@@ -13,8 +12,7 @@ use sqlx::types::Uuid;
 
 use crate::config::Caps;
 use crate::error::AppError;
-use crate::state::{AppState, DB};
-use crate::traits::to_uuid::ToUuid;
+use crate::state::DB;
 use crate::Context as _;
 
 fn too_big(msg: String) -> AppError {
@@ -94,9 +92,9 @@ pub async fn check_project_for_insert(
 
 /// Reject an UPDATE that would push the project past the byte cap.
 /// (Count does not change on update.)
-pub async fn check_project_for_update(
+pub async fn check_project_for_update_on(
     caps: &Caps,
-    db: &DB,
+    connection: &mut sqlx::PgConnection,
     project_id: Uuid,
     update_ids: &[Uuid],
     new_values: &[&str],
@@ -115,7 +113,7 @@ pub async fn check_project_for_update(
         project_id,
         update_ids
     )
-    .fetch_one(db.as_ref())
+    .fetch_one(&mut *connection)
     .await
     .context("Failed to fetch project size")?;
 
@@ -141,6 +139,16 @@ pub async fn check_user_total(
     user_id: Uuid,
     delta_bytes: i64,
 ) -> Result<(), AppError> {
+    let mut connection = db.acquire().await?;
+    check_user_total_on(caps, &mut connection, user_id, delta_bytes).await
+}
+
+pub async fn check_user_total_on(
+    caps: &Caps,
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    delta_bytes: i64,
+) -> Result<(), AppError> {
     let cap = caps.max_user_bytes;
     if cap == 0 {
         return Ok(());
@@ -153,7 +161,7 @@ pub async fn check_user_total(
            WHERE upr.user_id = $1"#,
         user_id
     )
-    .fetch_one(db.as_ref())
+    .fetch_one(&mut *connection)
     .await
     .context("Failed to fetch user total")?;
 
@@ -176,6 +184,16 @@ pub async fn check_and_record_ip(
     ip: IpAddr,
     bytes: i64,
 ) -> Result<(), AppError> {
+    let mut connection = db.acquire().await?;
+    check_and_record_ip_on(caps, &mut connection, ip, bytes).await
+}
+
+pub async fn check_and_record_ip_on(
+    caps: &Caps,
+    connection: &mut sqlx::PgConnection,
+    ip: IpAddr,
+    bytes: i64,
+) -> Result<(), AppError> {
     let cap = caps.max_ip_bytes_per_day;
     if cap == 0 {
         return Ok(());
@@ -185,7 +203,7 @@ pub async fn check_and_record_ip(
 
     // Prune old rows opportunistically. Cheap when the index is hot.
     sqlx::query!("DELETE FROM upload_log WHERE created_at < now() - interval '24 hours'")
-        .execute(db.as_ref())
+        .execute(&mut *connection)
         .await
         .context("Failed to prune upload_log")?;
 
@@ -195,7 +213,7 @@ pub async fn check_and_record_ip(
            WHERE ip = $1 AND created_at > now() - interval '24 hours'"#,
         net
     )
-    .fetch_one(db.as_ref())
+    .fetch_one(&mut *connection)
     .await
     .context("Failed to fetch ip upload total")?;
 
@@ -212,53 +230,9 @@ pub async fn check_and_record_ip(
         net,
         bytes
     )
-    .execute(db.as_ref())
+    .execute(&mut *connection)
     .await
     .context("Failed to record upload_log entry")?;
-
-    Ok(())
-}
-
-/// Cross-project update-many helper: groups the incoming updates by
-/// project, runs the per-project byte check on each, then runs the
-/// per-user and per-IP checks on the aggregate delta. `triples` is
-/// `(project_id_str, variable_id_str, new_value)`.
-pub async fn check_update_caps_grouped(
-    state: &AppState,
-    user_id: Uuid,
-    ip: IpAddr,
-    triples: Vec<(&str, &str, &str)>,
-) -> Result<(), AppError> {
-    let mut by_project: HashMap<Uuid, (Vec<Uuid>, Vec<&str>)> = HashMap::new();
-    let mut total_new_bytes: i64 = 0;
-
-    for (pid_str, vid_str, value) in &triples {
-        let pid = pid_str.to_string().to_uuid()?;
-        let vid = vid_str.to_string().to_uuid()?;
-        let entry = by_project.entry(pid).or_default();
-        entry.0.push(vid);
-        entry.1.push(*value);
-        total_new_bytes += value.len() as i64;
-    }
-
-    let mut total_replaced_bytes: i64 = 0;
-    for (pid, (ids, values)) in &by_project {
-        check_project_for_update(&state.caps, &state.db, *pid, ids, values).await?;
-
-        let row = sqlx::query!(
-            r#"SELECT COALESCE(sum(octet_length(value))::bigint, 0) AS "bytes!"
-               FROM variables WHERE id = ANY($1::uuid[])"#,
-            ids
-        )
-        .fetch_one(state.db.as_ref())
-        .await
-        .context("Failed to fetch replaced byte count")?;
-        total_replaced_bytes += row.bytes;
-    }
-
-    let delta = total_new_bytes - total_replaced_bytes;
-    check_user_total(&state.caps, &state.db, user_id, delta).await?;
-    check_and_record_ip(&state.caps, &state.db, ip, delta.max(0)).await?;
 
     Ok(())
 }
