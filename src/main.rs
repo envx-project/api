@@ -93,6 +93,17 @@ async fn init_router() -> anyhow::Result<Router> {
 
     let db = db::db().await?;
 
+    let pairing_db = db.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            if let Err(error) = routes::v2::pairing::cleanup(&pairing_db).await {
+                tracing::warn!(%error, "pairing cleanup failed");
+            }
+        }
+    });
+
     let caps = config::Caps::from_env();
     println!("caps: {:?}", caps);
     let state = AppState {

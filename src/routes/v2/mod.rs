@@ -4,6 +4,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 pub mod invite;
+pub mod pairing;
 pub mod project;
 pub mod projects;
 pub mod social;
@@ -17,6 +18,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .nest("/projects", projects::router(state.clone()))
         .nest("/user", user::router(state.clone()))
         .nest("/invite", invite::router(state.clone()))
+        .nest("/auth/pairing", pairing::router(state.clone()))
         .nest("/variables", variables::router(state.clone()))
         .with_state(state)
 }
